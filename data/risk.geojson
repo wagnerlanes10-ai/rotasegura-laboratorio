@@ -1,0 +1,39 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "source": "arquivo local",
+    "updated": "2025-10-16T00:00:00.000Z"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-43.1729, -22.9068] },
+      "properties": {
+        "severity": "alto",
+        "tipo": "Assalto a veículo",
+        "nota": "Exemplo inicial",
+        "radius_m": 200
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-43.1850, -22.9100] },
+      "properties": {
+        "severity": "medio",
+        "tipo": "Obra / bloqueio",
+        "nota": "Exemplo inicial",
+        "radius_m": 200
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-43.1600, -22.9000] },
+      "properties": {
+        "severity": "baixo",
+        "tipo": "Alagamento",
+        "nota": "Exemplo inicial",
+        "radius_m": 200
+      }
+    }
+  ]
+}
