@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/data/(.*)", "dest": "/data/$1" },
+    { "src": "/splash.html", "dest": "/splash.html" },
+    { "src": "/moderar.html", "dest": "/moderar.html" },
+    { "src": "/", "dest": "/splash.html" },
+    { "src": "/index.html", "dest": "/index.html" },
+    { "src": "/manifest.json", "dest": "/manifest.json" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
+}
