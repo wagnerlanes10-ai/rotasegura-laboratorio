@@ -12,7 +12,7 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;width:100%;overflow:hidden;font-family:-apple-system,sans-serif;background:#000;color:#fff}
-#map{position:fixed;inset:0;z-index:1}
+#map{position:fixed;inset:0;z-index:1;filter:invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9)}
 .top{position:fixed;top:0;left:0;right:0;z-index:500;padding:10px;display:flex;flex-direction:column;gap:8px;background:rgba(11,15,20,.92);backdrop-filter:blur(10px)}
 .top-row{display:flex;align-items:center;justify-content:space-between}
 .brand{color:#34d399;font-weight:800;font-size:16px}
@@ -186,7 +186,7 @@ function toast(m,ok=true){const t=$('toast');t.textContent=m;t.className=ok?'ok'
 function initMap(){
   map=L.map('map',{zoomControl:false}).setView([-22.9068,-43.1729],12);
   L.control.zoom({position:'topright'}).addTo(map);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'© OSM © CARTO',maxZoom:19}).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
   riskLayer=L.layerGroup().addTo(map);
   routeLayer=L.layerGroup().addTo(map);
   map.on('click',e=>{pendingReport={lat:e.latlng.lat,lng:e.latlng.lng};openReportSheet(e.latlng.lat,e.latlng.lng)})
