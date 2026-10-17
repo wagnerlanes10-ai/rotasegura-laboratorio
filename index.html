@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RotaSegura - Navegação e Alertas</title>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body class="day-theme">
+
+  <!-- Cabeçalho -->
+  <header class="app-header">
+    <div class="logo-area">
+      <span class="shield-icon">🛡️</span> 
+      <h1>RotaSegura</h1>
+    </div>
+    <div class="gps-status">
+      <span class="status-dot"></span> GPS ativo
+    </div>
+  </header>
+
+  <!-- Instrução de Navegação -->
+  <div class="nav-instruction-card">
+    <div class="nav-icon">↪</div>
+    <div class="nav-details">
+      <h2>1,3 km</h2>
+      <p class="instruction-main">Curva suave à direita</p>
+      <p class="street-name">R. Cmte. Ari Parreiras</p>
+    </div>
+  </div>
+
+  <!-- Contentor do Mapa (Para-brisa / HUD) -->
+  <div class="windshield-container">
+    <div class="rain-overlay" id="rainOverlay"></div>
+    <div id="map"></div>
+
+    <div class="speedometer-widget">
+      <div class="speed-value"><b>46</b><small>km/h</small></div>
+    </div>
+
+    <div class="risk-alert-widget">
+      <span>⚠️</span>
+      <b>350 m</b>
+      <span>Ponto de risco</span>
+    </div>
+
+    <div class="compass-widget">🧭</div>
+  </div>
+
+  <!-- Ações -->
+  <div class="action-bar">
+    <button class="btn-control" id="btn-recentralizar">
+      <span>📍</span> Recentralizar
+    </button>
+    <button class="btn-control">
+      <span>🔊</span> Som
+    </button>
+  </div>
+
+  <!-- Informação de Rota -->
+  <div class="route-info-card">
+    <div class="route-icon-box">🧭</div>
+    <div class="route-text">
+      <h3>Rota segura à frente</h3>
+      <p>Sem incidentes na sua rota.</p>
+    </div>
+    <div class="route-time">
+      <b>21 min</b>
+      <span>Chegada: <b>06:21</b></span>
+    </div>
+  </div>
+
+  <!-- Modos de Transporte -->
+  <div class="transport-modes">
+    <button class="mode-btn active">🚗<small>Carro</small></button>
+    <button class="mode-btn">🏍️<small>Moto</small></button>
+    <button class="mode-btn">🚲<small>Bike</small></button>
+    <button class="mode-btn">🚌<small>Ônibus</small></button>
+    <button class="mode-btn">🚶<small>A pé</small></button>
+  </div>
+
+  <!-- Leaflet e JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
