@@ -1,4 +1,4 @@
-<!doctype html>
+w<!doctype html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -105,7 +105,7 @@ html,body{height:100%;width:100%;overflow:hidden;font-family:-apple-system,sans-
 .risk-alto{fill:#ea4335;stroke:#ea4335}
 .risk-medio{fill:#fbbc04;stroke:#fbbc04}
 .risk-baixo{fill:#34a853;stroke:#34a853}
-.route-line{stroke:#34d399;stroke-width:6;stroke-opacity:.9;fill:none;filter:drop-shadow(0 0 10px rgba(52,211,153,.8))}
+.route-line{stroke:#38bdf8;stroke-width:7;stroke-opacity:1;fill:none;filter:drop-shadow(0 0 12px rgba(56,189,248,1)) drop-shadow(0 0 24px rgba(56,189,248,0.7)) drop-shadow(0 0 40px rgba(56,189,248,0.4))}
 </style>
 </head>
 <body>
@@ -199,7 +199,7 @@ function toggleNotifications(){
     localStorage.setItem('rs_notif',notificationsEnabled);
     updateNotifBtn();
     toast(notificationsEnabled?'🔔 Notificações ON':'🔕 Notificações OFF');
-    if(notificationsEnabled)sendNotification('RotaSegura','Notificações ativadas!');
+2    if(notificationsEnabled)sendNotification('RotaSegura','Notificações ativadas!');
   }else if(Notification.permission==='denied'){
     toast('❌ Bloqueado nas configurações',false);
   }else{
