@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0a1628">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RotaSegura">
+<link rel="manifest" href="/manifest.json">
+<title>RotaSegura</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;width:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#000}
+
+.splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden}
+
+/* Fundo simulando modo para-brisa */
+.splash-bg{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse at 50% 70%, rgba(10,20,40,0.3) 0%, rgba(0,0,0,0.95) 100%),
+    linear-gradient(180deg, #1a2332 0%, #0d1520 40%, #050a10 100%);
+  z-index:1;
+}
+
+/* Simulação de estrada */
+.splash-road{
+  position:absolute;
+  bottom:0;left:50%;
+  transform:translateX(-50%);
+  width:60%;height:70%;
+  background:linear-gradient(180deg, transparent 0%, rgba(30,40,50,0.8) 100%);
+  clip-path:polygon(40% 0%, 60% 0%, 100% 100%, 0% 100%);
+  z-index:2;
+}
+
+/* Linhas da estrada */
+.splash-road::before{
+  content:'';
+  position:absolute;
+  top:20%;left:50%;
+  transform:translateX(-50%);
+  width:4px;height:60%;
+  background:repeating-linear-gradient(180deg, #34d399 0px, #34d399 20px, transparent 20px, transparent 40px);
+  opacity:0.6;
+}
+
+/* Setas animadas no fundo */
+.splash-arrows{position:absolute;inset:0;z-index:3;overflow:hidden;pointer-events:none}
+.splash-arrow{
+  position:absolute;
+  left:50%;
+  opacity:0;
+  animation:arrowRise 3s linear infinite;
+  filter:drop-shadow(0 0 15px rgba(52,211,153,0.8));
+}
+.splash-arrow svg{width:100%;height:100%}
+.splash-arrow:nth-child(1){width:20px;height:20px;animation-delay:0s}
+.splash-arrow:nth-child(2){width:30px;height:30px;animation-delay:0.6s}
+.splash-arrow:nth-child(3){width:45px;height:45px;animation-delay:1.2s}
+.splash-arrow:nth-child(4){width:65px;height:65px;animation-delay:1.8s}
+.splash-arrow:nth-child(5){width:90px;height:90px;animation-delay:2.4s}
+
+@keyframes arrowRise{
+  0%{bottom:10%;opacity:0;transform:translateX(-50%) scale(0.5)}
+  20%{opacity:0.8;transform:translateX(-50%) scale(1)}
+  80%{opacity:0.8}
+  100%{bottom:70%;opacity:0;transform:translateX(-50%) scale(1.5)}
+}
+
+/* Overlay escuro */
+.splash-overlay{
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.85) 100%);
+  z-index:4;
+}
+
+/* Conteúdo */
+.splash-content{
+  position:relative;z-index:10;
+  display:flex;flex-direction:column;align-items:center;
+  padding:24px;text-align:center;width:100%;
+  animation:fadeIn 1s ease-out;
+}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+/* Escudo */
+.shield{
+  width:100px;height:100px;margin-bottom:16px;
+  filter:drop-shadow(0 0 30px rgba(52,211,153,0.6));
+  animation:shieldPulse 2.5s ease-in-out infinite;
+}
+@keyframes shieldPulse{
+  0%,100%{transform:scale(1);filter:drop-shadow(0 0 30px rgba(52,211,153,0.6))}
+  50%{transform:scale(1.05);filter:drop-shadow(0 0 50px rgba(52,211,153,0.9))}
+}
+
+/* Título */
+.title{
+  font-size:42px;font-weight:900;
+  background:linear-gradient(135deg, #34d399, #10b981);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  margin-bottom:8px;
+  text-shadow:0 0 40px rgba(52,211,153,0.3);
+  letter-spacing:-1px;
+}
+
+/* Subtítulo */
+.subtitle{
+  color:#e2e8f0;font-size:15px;
+  margin-bottom:32px;line-height:1.4;
+  max-width:280px;
+  text-shadow:0 2px 8px rgba(0,0,0,0.8);
+}
+
+/* Botão entrar */
+.enter-btn{
+  background:linear-gradient(135deg, #34d399, #10b981);
+  color:#06281c;border:none;
+  padding:18px 40px;font-size:17px;font-weight:800;
+  border-radius:50px;cursor:pointer;
+  width:90%;max-width:320px;
+  box-shadow:0 8px 32px rgba(52,211,153,0.4);
+  transition:all 0.2s;
+  margin-bottom:16px;
+}
+.enter-btn:active{transform:scale(0.96)}
+
+/* Dica de instalar */
+.install-tip{
+  background:rgba(52,211,153,0.15);
+  border:1px solid rgba(52,211,153,0.3);
+  color:#34d399;
+  padding:10px 16px;border-radius:12px;
+  font-size:12px;font-weight:600;
+  display:flex;align-items:center;gap:8px;
+  backdrop-filter:blur(10px);
+  animation:slideTip 0.5s ease-out 1s both;
+}
+@keyframes slideTip{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+.install-tip span{font-size:18px}
+
+/* HUD decorativo no fundo */
+.hud-deco{position:absolute;z-index:2;pointer-events:none;opacity:0.3}
+.hud-deco-speed{
+  bottom:120px;left:20px;
+  width:70px;height:70px;
+  border:3px solid #34d399;border-radius:50%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:rgba(15,23,42,0.5);
+}
+.hud-deco-speed b{font-size:22px;font-weight:800;color:#fff}
+.hud-deco-speed small{font-size:9px;color:#94a3b8}
+
+.hud-deco-nav{
+  top:60px;left:16px;right:16px;
+  background:rgba(15,23,42,0.5);
+  border-radius:12px;padding:12px 16px;
+  display:flex;align-items:center;gap:12px;
+  border:1px solid rgba(255,255,255,0.1);
+}
+.hud-deco-nav .arrow{font-size:32px;color:#fff}
+.hud-deco-nav .info h3{color:#fff;font-size:18px;font-weight:800}
+.hud-deco-nav .info p{color:#94a3b8;font-size:11px}
+
+.hud-deco-risk{
+  top:50%;right:16px;transform:translateY(-50%);
+  background:rgba(220,38,38,0.5);
+  padding:10px 14px;border-radius:12px;
+  text-align:center;border:1px solid rgba(255,255,255,0.2);
+}
+.hud-deco-risk .icon{font-size:20px}
+.hud-deco-risk b{color:#fff;font-size:14px;display:block}
+.hud-deco-risk span{color:#fff;font-size:9px}
+</style>
+</head>
+<body>
+
+<div class="splash">
+  <!-- Fundo modo para-brisa -->
+  <div class="splash-bg"></div>
+  <div class="splash-road"></div>
+  
+  <!-- Setas animadas -->
+  <div class="splash-arrows">
+    <div class="splash-arrow"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="#34d399" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg></div>
+    <div class="splash-arrow"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="#34d399" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg></div>
+    <div class="splash-arrow"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="#34d399" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg></div>
+    <div class="splash-arrow"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="#34d399" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg></div>
+    <div class="splash-arrow"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="#34d399" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg></div>
+  </div>
+  
+  <!-- Elementos HUD decorativos -->
+  <div class="hud-deco hud-deco-nav">
+    <div class="arrow">↪</div>
+    <div class="info">
+      <h3>1,3 km</h3>
+      <p>Curva suave à direita</p>
+    </div>
+  </div>
+  
+  <div class="hud-deco hud-deco-speed">
+    <b>46</b>
+    <small>km/h</small>
+  </div>
+  
+  <div class="hud-deco hud-deco-risk">
+    <div class="icon">⚠️</div>
+    <b>350 m</b>
+    <span>Ponto de risco</span>
+  </div>
+  
+  <!-- Overlay -->
+  <div class="splash-overlay"></div>
+  
+  <!-- Conteúdo -->
+  <div class="splash-content">
+    <svg class="shield" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="sg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#6ee7b7"/>
+          <stop offset="100%" style="stop-color:#10b981"/>
+        </linearGradient>
+      </defs>
+      <path d="M100 20 L160 50 L160 110 Q160 160 100 180 Q40 160 40 110 L40 50 Z" fill="url(#sg)" stroke="#34d399" stroke-width="2"/>
+      <path d="M75 100 L95 120 L130 80" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    
+    <h1 class="title">RotaSegura</h1>
+    <p class="subtitle">Navegação inteligente com alertas de segurança em tempo real</p>
+    
+    <button class="enter-btn" onclick="enterApp()">Entrar no RotaSegura</button>
+    
+    <div class="install-tip">
+      <span>📱</span>
+      Toque em "Adicionar à tela inicial" para instalar
+    </div>
+  </div>
+</div>
+
+<script>
+function enterApp(){window.location.href='/index.html'}
+</script>
+</body>
+</html>
