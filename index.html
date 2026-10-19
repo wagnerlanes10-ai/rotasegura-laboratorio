@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0a1628">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="RotaSegura">
+<link rel="manifest" href="/manifest.json">
+<title>RotaSegura</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;width:100%;overflow:hidden;font-family:-apple-system,sans-serif;background:#000;color:#fff}
+#map{position:fixed;inset:0;z-index:1;filter:invert(1) hue-rotate(180deg) brightness(0.9) contrast(1.1);transition:transform 1s,filter 1s}
+#map.perspective{transform:perspective(800px) rotateX(50deg) scale(1.3);transform-origin:50% 70%}
+.top{position:fixed;top:0;left:0;right:0;z-index:500;padding:10px;display:flex;flex-direction:column;gap:8px;background:rgba(11,15,20,.92);backdrop-filter:blur(10px)}
+.top-row{display:flex;align-items:center;justify-content:space-between}
+.brand{color:#34d399;font-weight:800;font-size:16px}
+.gps-status{display:flex;align-items:center;gap:6px;background:rgba(52,211,153,.2);padding:6px 12px;border-radius:20px;font-size:12px;color:#34d399}
+.gps-status .dot{width:8px;height:8px;border-radius:50%;background:#34d399;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.menu-btn{background:rgba(255,255,255,.1);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer}
+.search-bar{display:flex;gap:8px}
+.search-bar input{flex:1;background:rgba(30,41,59,.9);border:1px solid #334155;color:#fff;padding:10px 14px;border-radius:10px;font-size:14px;outline:none}
+.search-bar button{background:linear-gradient(135deg,#34d399,#10b981);color:#06281c;border:none;padding:10px 18px;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer}
+.bottom{position:fixed;bottom:0;left:0;right:0;z-index:500;background:rgba(11,15,20,.95);backdrop-filter:blur(10px);padding:14px;border-top-left-radius:16px;border-top-right-radius:16px;max-height:45vh;overflow-y:auto}
+.bottom h3{color:#34d399;font-size:14px;margin-bottom:10px}
+.route-info{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.route-info .chip{background:#1e293b;padding:6px 12px;border-radius:8px;font-size:12px;color:#cbd5e1}
+.route-info .chip b{color:#fff}
+.actions{display:flex;gap:6px;flex-wrap:wrap}
+.actions button{flex:1;min-width:80px;background:#1e293b;color:#fff;border:1px solid #334155;padding:10px;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer}
+.actions button.active-3d,.actions button.active-mode{background:rgba(52,211,153,.2);border-color:#34d399;color:#34d399}
+#status{margin-top:8px;font-size:12px;color:#94a3b8;min-height:18px}
+.modes-panel{display:none;gap:8px;overflow-x:auto;padding:8px 0;margin-top:10px;border-top:1px solid rgba(255,255,255,.1);animation:slideDown .3s ease}
+.modes-panel.show{display:flex}
+@keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+.modes-panel button{flex:0 0 auto;min-width:72px;background:#1e293b;color:#fff;border:2px solid transparent;padding:10px 8px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px}
+.modes-panel button .icon{font-size:22px}
+.modes-panel button.active{background:rgba(52,211,153,.15);border-color:#34d399;color:#34d399}
+
+/* ===== HUD HOLOGRÁFICO ===== */
+#hud{position:fixed;inset:0;z-index:2000;display:none;background:#000;overflow:hidden}
+#hud video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
+#hud .hud-overlay{position:absolute;inset:0;z-index:2;pointer-events:none}
+#hud .hud-overlay>*{pointer-events:auto}
+
+/* Painel holográfico principal */
+.hud-holo{
+  position:absolute;top:8%;left:10%;right:10%;
+  background:rgba(0,30,60,0.15);
+  border:1px solid rgba(56,189,248,0.3);
+  border-radius:24px;
+  padding:20px;
+  backdrop-filter:blur(2px);
+  box-shadow:0 0 40px rgba(56,189,248,0.2),inset 0 0 40px rgba(56,189,248,0.05);
+}
+
+/* Velocidade e limite */
+.hud-speed-row{display:flex;align-items:center;gap:16px;margin-bottom:16px}
+.hud-speed-limit{
+  width:56px;height:56px;border-radius:50%;
+  border:2px solid rgba(255,255,255,0.8);
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;font-weight:700;color:#fff;
+  text-shadow:0 0 10px rgba(255,255,255,0.5);
+}
+.hud-speed-current{
+  font-size:48px;font-weight:300;color:#fff;
+  text-shadow:0 0 20px rgba(56,189,248,0.8);
+  line-height:1;
+}
+.hud-speed-unit{font-size:14px;color:rgba(255,255,255,0.6);margin-left:4px}
+
+/* Seta de curva gigante */
+.hud-turn-arrow{
+  text-align:center;margin:20px 0;
+  filter:drop-shadow(0 0 20px rgba(56,189,248,0.9)) drop-shadow(0 0 40px rgba(56,189,248,0.5));
+}
+.hud-turn-arrow svg{width:120px;height:120px}
+
+/* Distância até curva */
+.hud-turn-dist{
+  text-align:center;font-size:28px;font-weight:300;color:#fff;
+  text-shadow:0 0 15px rgba(56,189,248,0.8);
+  margin-top:10px;
+}
+.hud-turn-dist span{font-size:16px;color:rgba(255,255,255,0.6);margin-left:4px}
+
+/* Linhas de rota projetadas */
+.hud-road-lines{
+  position:absolute;bottom:0;left:0;right:0;height:40%;
+  pointer-events:none;z-index:1;
+}
+.hud-road-line{
+  position:absolute;bottom:0;
+  width:4px;
+  background:linear-gradient(180deg,transparent 0%,rgba(56,189,248,0.6) 50%,rgba(56,189,248,0.9) 100%);
+  box-shadow:0 0 10px rgba(56,189,248,0.8);
+  animation:roadPulse 2s ease-in-out infinite;
+}
+.hud-road-line:nth-child(1){left:30%;height:60%;animation-delay:0s}
+.hud-road-line:nth-child(2){left:50%;height:80%;animation-delay:.3s}
+.hud-road-line:nth-child(3){left:70%;height:60%;animation-delay:.6s}
+@keyframes roadPulse{0%,100%{opacity:0.6}50%{opacity:1}}
+
+/* Botões do HUD */
+.hud-controls{
+  position:absolute;bottom:20px;left:16px;right:16px;
+  display:flex;gap:10px;z-index:10;
+}
+.hud-controls button{
+  flex:1;background:rgba(0,30,60,0.6);backdrop-filter:blur(10px);
+  color:#fff;border:1px solid rgba(56,189,248,0.4);
+  padding:12px;border-radius:12px;font-size:13px;font-weight:600;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.hud-controls button:active{opacity:0.7}
+.hud-controls button.active-voice{background:rgba(56,189,248,0.3);border-color:#38bdf8;color:#38bdf8}
+
+.hud-close{
+  position:absolute;top:16px;right:16px;
+  background:rgba(0,30,60,0.6);backdrop-filter:blur(10px);
+  color:#fff;border:1px solid rgba(56,189,248,0.4);
+  width:44px;height:44px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:20px;
+  cursor:pointer;z-index:10;
+}
+
+/* Alerta de risco */
+.hud-risk-alert{
+  position:absolute;top:50%;right:16px;transform:translateY(-50%);
+  background:rgba(220,38,38,0.8);backdrop-filter:blur(10px);
+  color:#fff;padding:12px 16px;border-radius:12px;
+  text-align:center;border:1px solid rgba(255,255,255,0.3);
+  animation:riskPulse 1.5s infinite;z-index:10;
+}
+@keyframes riskPulse{0%,100%{transform:translateY(-50%) scale(1)}50%{transform:translateY(-50%) scale(1.05)}}
+.hud-risk-alert b{font-size:18px;display:block}
+.hud-risk-alert span{font-size:11px}
+
+#toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;z-index:2500;display:none;border:1px solid #334155;max-width:90%;text-align:center}
+#toast.ok{border-color:#34d399}
+#toast.err{border-color:#ea4335}
+#reportSheet{position:fixed;bottom:0;left:0;right:0;z-index:2600;background:#0b0f14;border-top:2px solid #34d399;padding:18px;border-radius:18px 18px 0 0;max-height:75vh;overflow-y:auto;display:none}
+#reportSheet h3{margin:0 0 10px;color:#34d399;font-size:16px}
+#reportSheet label{display:block;margin:8px 0 4px;color:#cbd5e1;font-size:13px}
+#reportSheet select,#reportSheet input,#reportSheet textarea{width:100%;background:#1e293b;border:1px solid #334155;color:#fff;padding:8px;border-radius:6px;font-size:13px;outline:none}
+#reportSheet textarea{min-height:70px;resize:vertical}
+#reportSheet .row{display:flex;gap:6px;margin-top:12px}
+#reportSheet .row button{flex:1;padding:10px;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer}
+#reportSheet .row .cancel{background:#334155;color:#fff}
+#reportSheet .row .submit{background:#34d399;color:#06281c}
+.legend{position:fixed;bottom:16px;right:16px;z-index:400;background:rgba(11,15,20,.9);padding:8px 12px;border-radius:8px;font-size:11px;color:#cbd5e1;border:1px solid #1e293b}
+.legend div{display:flex;align-items:center;gap:6px;margin:2px 0}
+.legend .dot{width:10px;height:10px;border-radius:50%}
+.risk-circle{fill-opacity:.25;stroke-width:2}
+.risk-alto{fill:#ea4335;stroke:#ea4335}
+.risk-medio{fill:#fbbc04;stroke:#fbbc04}
+.risk-baixo{fill:#34a853;stroke:#34a853}
+.route-line-bg{stroke:#fff;stroke-width:12;stroke-opacity:.9;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.route-line{stroke:#38bdf8;stroke-width:8;stroke-opacity:1;fill:none;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 8px rgba(56,189,248,.8))}
+.vehicle-marker{width:40px;height:40px;background:#38bdf8;border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 0 20px rgba(56,189,248,.8)}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="top" id="topBar">
+  <div class="top-row">
+    <div class="brand">🛡️ RotaSegura</div>
+    <div class="gps-status" id="gpsStatus" style="display:none"><span class="dot"></span> GPS ativo</div>
+    <button class="menu-btn" onclick="openMenu()">☰</button>
+  </div>
+  <div class="search-bar">
+    <input id="destInput" type="text" placeholder="🔍 Para onde vamos?">
+    <button id="goBtn" onclick="calcRoute()">IR →</button>
+  </div>
+</div>
+<div class="bottom" id="bottomPanel">
+  <h3>📍 Sua localização</h3>
+  <div class="route-info" id="routeInfo" style="display:none">
+    <div class="chip">Distância: <b id="distChip">—</b></div>
+    <div class="chip">Tempo: <b id="timeChip">—</b></div>
+    <div class="chip">Riscos: <b id="riskChip">—</b></div>
+  </div>
+  <div class="actions">
+    <button onclick="startHUD()"> Para-brisa</button>
+    <button onclick="openReportFromBtn()">⚠️ Risco</button>
+    <button onclick="centerOnUser()" id="centerBtn">🎯 3D</button>
+    <button onclick="toggleNotifications()" id="notifBtn">🔔</button>
+    <button onclick="toggleModes()" id="modeBtn">🚗 Modo</button>
+  </div>
+  <div class="modes-panel" id="modesPanel">
+    <button class="active" onclick="setMode(this,'Carro')"><span class="icon">🚗</span>Carro</button>
+    <button onclick="setMode(this,'Moto')"><span class="icon">🏍️</span>Moto</button>
+    <button onclick="setMode(this,'Bike')"><span class="icon">🚲</span>Bike</button>
+    <button onclick="setMode(this,'Ônibus')"><span class="icon">🚌</span>Ônibus</button>
+    <button onclick="setMode(this,'A pé')"><span class="icon">🚶</span>A pé</button>
+  </div>
+  <div id="status">Toque no mapa para reportar um risco.</div>
+</div>
+
+<!-- HUD HOLOGRÁFICO -->
+<div id="hud">
+  <video id="hudVideo" autoplay playsinline muted></video>
+  <div class="hud-overlay">
+    <!-- Linhas de rota projetadas -->
+    <div class="hud-road-lines">
+      <div class="hud-road-line"></div>
+      <div class="hud-road-line"></div>
+      <div class="hud-road-line"></div>
+    </div>
+    
+    <!-- Painel holográfico principal -->
+    <div class="hud-holo">
+      <div class="hud-speed-row">
+        <div class="hud-speed-limit" id="hudSpeedLimit">60</div>
+        <div>
+          <span class="hud-speed-current" id="hudSpeed">55</span>
+          <span class="hud-speed-unit">km/h</span>
+        </div>
+      </div>
+      
+      <div class="hud-turn-arrow" id="hudTurnArrow">
+        <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 80 L20 40 Q20 20 40 20 L80 20 L80 35 L45 35 Q35 35 35 45 L35 80 Z" 
+                fill="#38bdf8" stroke="#fff" stroke-width="2" stroke-linejoin="round"
+                style="filter:drop-shadow(0 0 15px rgba(56,189,248,0.9))"/>
+          <path d="M70 10 L90 30 L70 50" 
+                stroke="#38bdf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"
+                style="filter:drop-shadow(0 0 15px rgba(56,189,248,0.9))"/>
+        </svg>
+      </div>
+      
+      <div class="hud-turn-dist">
+        <span id="hudTurnDist">0.3</span><span>km</span>
+      </div>
+    </div>
+    
+    <!-- Alerta de risco -->
+    <div class="hud-risk-alert" id="hudRiskAlert" style="display:none">
+      <div>⚠️</div>
+      <b id="hudRiskDist">350 m</b>
+      <span>Ponto de risco</span>
+    </div>
+    
+    <!-- Botões de controle -->
+    <div class="hud-controls">
+      <button onclick="centerOnUser()">🎯 Recentralizar</button>
+      <button id="hudSoundBtn" onclick="toggleSound()">🔊 Som</button>
+      <button id="hudVoiceBtn" onclick="toggleVoice()">️ Voz</button>
+    </div>
+    
+    <button class="hud-close" onclick="stopHUD()">✕</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="reportSheet">
+  <h3>⚠️ Reportar ponto de risco</h3>
+  <p style="color:#94a3b8;font-size:12px;margin:0 0 8px">Local: <span id="reportCoords">—</span></p>
+  <label>Severidade</label><select id="repSev"><option value="baixo">Baixo</option><option value="medio" selected>Médio</option><option value="alto">Alto</option></select>
+  <label>Tipo</label><select id="repType"><option>Acidente</option><option>Obra</option><option>Alagamento</option><option>Outro</option></select>
+  <label>Observação</label><textarea id="repNote" placeholder="Descreva..."></textarea>
+  <div class="row"><button class="cancel" onclick="closeReport()">Cancelar</button><button class="submit" id="repSubmit" onclick="submitReport()">Enviar</button></div>
+</div>
+<div class="legend" id="legend"><div><span class="dot" style="background:#ea4335"></span> Alto risco</div><div><span class="dot" style="background:#fbbc04"></span> Médio risco</div><div><span class="dot" style="background:#34a853"></span> Baixo risco</div></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+let map,userMarker,routeLayer,routeLayerBg,riskLayer,risks=[],userPos=null,destPos=null,currentRoute=null,hudStream=null,hudActive=false,watchId=null,pendingReport=null,currentSpeed=0,currentHeading=0,hudSoundEnabled=true,voiceEnabled=true,currentMode='Carro',synth=window.speechSynthesis,ptVoice=null,lastSpokenRisk='',notificationsEnabled=false,notifiedRisks=new Set(),arrivalNotified=false,isPerspective=false,vehicleMarker=null;
+
+function toggleModes(){
+  const p=$('modesPanel');const b=$('modeBtn');
+  if(p.classList.contains('show')){p.classList.remove('show');b.classList.remove('active-mode')}
+  else{p.classList.add('show');b.classList.add('active-mode')}
+}
+
+function togglePerspective(){
+  const m=$('map');isPerspective=!isPerspective;
+  if(isPerspective){m.classList.add('perspective');$('centerBtn').classList.add('active-3d');$('centerBtn').textContent='️ 2D'}
+  else{m.classList.remove('perspective');$('centerBtn').classList.remove('active-3d');$('centerBtn').textContent='🎯 3D'}
+  setTimeout(()=>map.invalidateSize(),1100);
+}
+
+function toggleNotifications(){
+  if(!('Notification' in window)){toast('❌ Sem suporte',false);return}
+  if(Notification.permission==='granted'){notificationsEnabled=!notificationsEnabled;localStorage.setItem('rs_notif',notificationsEnabled);updateNotifBtn();toast(notificationsEnabled?' ON':'🔕 OFF');if(notificationsEnabled)sendNotification('RotaSegura','Notificações ativadas!')}
+  else if(Notification.permission==='denied')toast('🚫 Bloqueado',false);
+  else{Notification.requestPermission().then(p=>{if(p==='granted'){notificationsEnabled=true;localStorage.setItem('rs_notif','true');updateNotifBtn();sendNotification('RotaSegura','Ativadas!');toast('🔔 Ativadas!')}else toast('Negada',false)})}
+}
+
+function updateNotifBtn(){const b=$('notifBtn');if(!('Notification' in window)){b.textContent='🔕';return}if(Notification.permission==='granted')b.textContent=notificationsEnabled?'':'🔕';else if(Notification.permission==='denied')b.textContent='🚫';else b.textContent='🔔'}
+
+function sendNotification(title,body){if(!notificationsEnabled)return;if(Notification.permission!=='granted')return;try{const n=new Notification(title,{body:body,vibrate:[200,100,200],tag:'rs-'+Date.now()});setTimeout(()=>n.close(),8000)}catch(e){}}
+
+try{if(localStorage.getItem('rs_notif')==='true')notificationsEnabled=true}catch(e){}
+
+function loadVoice(){const v=synth.getVoices();ptVoice=v.find(x=>x.lang.startsWith('pt'))||v[0]}
+if(synth.onvoiceschanged!==undefined)synth.onvoiceschanged=loadVoice;loadVoice();
+
+function speak(t){if(!voiceEnabled||!synth)return;synth.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='pt-BR';if(ptVoice)u.voice=ptVoice;synth.speak(u)}
+
+function toggleVoice(){voiceEnabled=!voiceEnabled;const b=$('hudVoiceBtn');if(voiceEnabled){b.classList.add('active-voice');b.innerHTML='🗣️ Voz';toast('🔊 Voz')}else{b.classList.remove('active-voice');b.innerHTML=' Voz';toast('🔇 Mudo');synth.cancel()}}
+
+function toast(m,ok=true){const t=$('toast');t.textContent=m;t.className=ok?'ok':'err';t.style.display='block';clearTimeout(toast._t);toast._t=setTimeout(()=>t.style.display='none',3000)}
+
+function initMap(){
+  map=L.map('map',{zoomControl:false}).setView([-22.9068,-43.1729],12);
+  L.control.zoom({position:'topright'}).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:19}).addTo(map);
+  riskLayer=L.layerGroup().addTo(map);
+  routeLayerBg=L.layerGroup().addTo(map);
+  routeLayer=L.layerGroup().addTo(map);
+  map.on('click',e=>{pendingReport={lat:e.latlng.lat,lng:e.latlng.lng};openReportSheet(e.latlng.lat,e.latlng.lng)})
+}
+
+function locateUser(){
+  if(!navigator.geolocation){toast('GPS não disponível',false);return}
+  navigator.geolocation.getCurrentPosition(pos=>{
+    userPos=[pos.coords.latitude,pos.coords.longitude];
+    updateUserMarker();map.setView(userPos,15);
+    $('gpsStatus').style.display='flex';
+    $('status').textContent='✅ Localização obtida.';
+    sendNotification('📍 Localização','RotaSegura pronto.');
+  },err=>{$('status').textContent='⚠️ '+err.message},{enableHighAccuracy:true,timeout:10000});
+  watchId=navigator.geolocation.watchPosition(pos=>{
+    userPos=[pos.coords.latitude,pos.coords.longitude];
+    updateUserMarker();updateVehicleMarker();
+    if(hudActive){currentSpeed=pos.coords.speed?Math.round(pos.coords.speed*3.6):0;currentHeading=pos.coords.heading||0;updateHUDSpeed();checkRiskProximity();checkArrival()}
+  },()=>{},{enableHighAccuracy:true})
+}
+
+function updateUserMarker(){
+  if(!userPos)return;
+  if(userMarker)map.removeLayer(userMarker);
+  userMarker=L.circleMarker(userPos,{radius:10,color:'#1a73e8',fillColor:'#1a73e8',fillOpacity:.9,weight:2}).addTo(map);
+  userMarker.bindPopup('📍 Você está aqui').openPopup()
+}
+
+function updateVehicleMarker(){
+  if(!userPos||!currentRoute)return;
+  if(vehicleMarker)map.removeLayer(vehicleMarker);
+  const icon=L.divIcon({className:'vehicle-marker',html:'🚗',iconSize:[40,40],iconAnchor:[20,20]});
+  vehicleMarker=L.marker(userPos,{icon:icon}).addTo(map);
+}
+
+function loadRisks(){
+  fetch('/api/risk').then(r=>r.ok?r.json():Promise.reject()).then(d=>{risks=d.features||[];paintRisks()}).catch(()=>
+    fetch('/data/risk.geojson').then(r=>r.ok?r.json():Promise.reject()).then(d=>{risks=d.features||[];paintRisks()}).catch(()=>{})
+  )
+}
+
+function paintRisks(){
+  riskLayer.clearLayers();
+  risks.forEach(f=>{
+    const p=f.properties||{};const c=f.geometry?.coordinates||[p.lng,p.lat];
+    const lat=p.lat??c[1],lng=p.lng??c[0];
+    const sev=(p.severity_eff||p.severity||'medio').toLowerCase();
+    const r=p.radius_m||200;
+    const cls=sev==='alto'?'risk-alto':sev==='baixo'?'risk-baixo':'risk-medio';
+    L.circle([lat,lng],{radius:r,className:'risk-circle '+cls,interactive:true}).addTo(riskLayer).bindPopup('<b>'+(p.type||'Risco')+'</b><br>Severidade: '+sev)
+  })
+}
+
+function calcRoute(){
+  const q=$('destInput').value.trim();
+  if(!q){toast('Digite um destino',false);return}
+  $('status').textContent='🔍 Buscando...';arrivalNotified=false;
+  fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=1&countrycodes=br').then(r=>r.json()).then(g=>{
+    if(!g.length){toast('Destino não encontrado',false);return}
+    destPos=[parseFloat(g[0].lat),parseFloat(g[0].lon)];
+    if(!userPos){toast('Aguardando localização...',false);return}
+    return fetch('https://router.project-osrm.org/route/v1/driving/'+userPos[1]+','+userPos[0]+';'+destPos[1]+','+destPos[0]+'?overview=full&geometries=geojson')
+  }).then(r=>r?r.json():null).then(o=>{
+    if(!o||!o.routes||!o.routes.length){toast('Rota não encontrada',false);return}
+    currentRoute=o.routes[0];drawRoute();analyzeRouteRisks();
+    $('status').textContent='✅ Rota calculada!';
+    const dist=(currentRoute.distance/1000).toFixed(1);
+    speak('Rota calculada. '+dist+' quilômetros. Modo '+currentMode+'.');
+    sendNotification('🗺️ Rota calculada',dist+' km até o destino. Modo: '+currentMode);
+    if(!isPerspective)togglePerspective();
+  }).catch(e=>toast('Erro ao calcular rota',false))
+}
+
+$('destInput').addEventListener('keydown',e=>{if(e.key==='Enter')calcRoute()});
+
+function drawRoute(){
+  routeLayerBg.clearLayers();routeLayer.clearLayers();
+  const coords=currentRoute.geometry.coordinates.map(c=>[c[1],c[0]]);
+  L.polyline(coords,{className:'route-line-bg'}).addTo(routeLayerBg);
+  L.polyline(coords,{className:'route-line'}).addTo(routeLayer);
+  map.fitBounds(L.polyline(coords).getBounds(),{padding:[60,60]});
+  if(destPos)L.marker(destPos).addTo(routeLayer).bindPopup('🏁 Destino').openPopup();
+  updateVehicleMarker()
+}
+
+function analyzeRouteRisks(){
+  if(!currentRoute)return;
+  const coords=currentRoute.geometry.coordinates;let count=0;
+  risks.forEach(f=>{
+    const p=f.properties||{};const c=f.geometry?.coordinates||[p.lng,p.lat];
+    const lat=p.lat??c[1],lng=p.lng??c[0];const r=p.radius_m||200;
+    for(const c of coords){if(haversine(lat,lng,c[1],c[0])<=r){count++;break}}
+  });
+  $('routeInfo').style.display='flex';
+  $('distChip').textContent=(currentRoute.distance/1000).toFixed(1)+' km';
+  $('timeChip').textContent=Math.round(currentRoute.duration/60)+' min';
+  $('riskChip').textContent=count;
+  $('status').textContent=count>0?'⚠️ '+count+' zona(s) de risco.':'✅ Rota sem riscos.'
+}
+
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000,toRad=x=>x*Math.PI/180;
+  const dLat=toRad(lat2-lat1),dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))
+}
+
+function openReportFromBtn(){if(!userPos){toast('Aguardando...',false);return}pendingReport={lat:userPos[0],lng:userPos[1]};openReportSheet(userPos[0],userPos[1])}
+function openReportSheet(lat,lng){$('reportCoords').textContent=lat.toFixed(5)+', '+lng.toFixed(5);$('reportSheet').style.display='block'}
+function closeReport(){$('reportSheet').style.display='none'}
+
+function submitReport(){
+  if(!pendingReport){toast('Local não definido',false);return}
+  const body={lat:pendingReport.lat,lng:pendingReport.lng,severity:$('repSev').value,type:$('repType').value,note:$('repNote').value.trim()};
+  $('repSubmit').disabled=true;$('repSubmit').textContent='Enviando...';
+  fetch('/api/risk/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(()=>{
+    toast('✅ Enviado!');$('reportSheet').style.display='none';$('repNote').value='';loadRisks();
+    sendNotification('✅ Reporte enviado','Obrigado!');
+  }).catch(e=>toast('❌ Erro',false)).finally(()=>$('repSubmit').disabled=false,$('repSubmit').textContent='Enviar')
+}
+
+function centerOnUser(){
+  if(!userPos)return;
+  if(currentRoute&&!isPerspective){togglePerspective();setTimeout(()=>{map.fitBounds(routeLayer.getBounds(),{padding:[50,50],maxZoom:15});setTimeout(()=>map.invalidateSize(),1100)},100);toast("️ Perspectiva 3D")}
+  else if(isPerspective){togglePerspective();map.setView(userPos,17);toast("📍 Visão 2D")}
+  else{map.setView(userPos,17);toast("📍 Centralizado")}
+}
+
+function startHUD(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){toast('❌ Câmera não suportada',false);$('hud').style.display='block';return}
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false}).then(s=>{
+    hudStream=s;$('hudVideo').srcObject=s;$('hud').style.display='block';hudActive=true;
+    updateHUDSpeed();
+    window.addEventListener('deviceorientation',handleOrientation);
+    speak('Modo para-brisa ativado. Modo '+currentMode+'.');
+    sendNotification('🚗 Para-brisa','Câmera ativada. Modo: '+currentMode);
+  }).catch(e=>{toast('❌ Câmera: '+e.message,false);$('hud').style.display='block'})
+}
+
+function stopHUD(){
+  if(hudStream){hudStream.getTracks().forEach(t=>t.stop());hudStream=null}
+  $('hud').style.display='none';hudActive=false;synth.cancel();
+  window.removeEventListener('deviceorientation',handleOrientation)
+}
+
+function toggleSound(){hudSoundEnabled=!hudSoundEnabled;$('hudSoundBtn').textContent=hudSoundEnabled?'🔊 Som':'🔇 Mudo'}
+function setMode(b,m){
+  document.querySelectorAll('.modes-panel button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');currentMode=m;
+  $('modesPanel').classList.remove('show');$('modeBtn').classList.remove('active-mode');
+  toast(' Modo: '+m);
+}
+function openMenu(){toast('☰ Menu em desenvolvimento')}
+function handleOrientation(e){if(e.alpha!==null){currentHeading=e.alpha}}
+
+function updateHUDSpeed(){
+  $('hudSpeed').textContent=currentSpeed;
+}
+
+function checkRiskProximity(){
+  if(!userPos||!risks.length)return;
+  let nearest=null,minD=Infinity;
+  risks.forEach(f=>{
+    const p=f.properties||{};const c=f.geometry?.coordinates||[p.lng,p.lat];
+    const lat=p.lat??c[1],lng=p.lng??c[0];
+    const d=haversine(userPos[0],userPos[1],lat,lng),r=p.radius_m||200;
+    if(d<r+500&&d<minD){minD=d;nearest=p}
+  });
+  if(nearest&&minD<1000){
+    $('hudRiskAlert').style.display='block';
+    $('hudRiskDist').textContent=Math.round(minD)+' m';
+    const riskKey=nearest.type+Math.round(minD/100);
+    if(minD<500&&lastSpokenRisk!==riskKey){
+      speak('Atenção. Risco a '+Math.round(minD)+' metros.');
+      lastSpokenRisk=riskKey;
+      const nk='risk-'+nearest.type+'-'+Math.round(minD/50);
+      if(!notifiedRisks.has(nk)){sendNotification('⚠️ Risco à frente!',(nearest.type||'Risco')+' a '+Math.round(minD)+'m.');notifiedRisks.add(nk);setTimeout(()=>notifiedRisks.delete(nk),60000)}
+    }
+  }else{$('hudRiskAlert').style.display='none';lastSpokenRisk=''}
+}
+
+function checkArrival(){
+  if(!currentRoute||!destPos||!userPos||arrivalNotified)return;
+  const d=haversine(userPos[0],userPos[1],destPos[0],destPos[1]);
+  if(d<100){arrivalNotified=true;speak('Você chegou!');sendNotification('🏁 Chegou!','Destino alcançado.');toast('🏁 Chegou!')}
+}
+
+initMap();loadRisks();locateUser();updateNotifBtn();
+</script>
+</body>
+</html>
