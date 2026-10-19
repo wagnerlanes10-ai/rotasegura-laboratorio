@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#031025">
+<title>RotaSegura - Neon HUD</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+/* ==========================================
+   BASE & LEAFLET
+   ========================================== */
+:root {
+  --rs-bg: rgba(3, 16, 37, 0.94);
+  --rs-bg-light: rgba(7, 28, 57, 0.92);
+  --rs-blue: #00bfff;
+  --rs-blue-light: #42dcff;
+  --rs-border: rgba(0, 191, 255, 0.72);
+  --rs-text: #f4faff;
+  --rs-muted: #b8d8ee;
+  --rs-glow: 0 0 12px rgba(0, 191, 255, 0.28);
+}
+*{box-sizing:border-box}html,body,#map{margin:0;width:100%;height:100%;font-family:'Segoe UI',Arial,Helvetica,sans-serif}
+body{overflow:hidden;background:#020c1e;color:var(--rs-text)}
+#map{position:absolute;inset:0}
+
+/* ==========================================
+   SEU CSS NEON HUD (Integrado)
+   ========================================== */
+#navCard, #bottomPanel, #hud .hud-overlay, #hud .hud-nav, #hud .hud-traffic, #hud .hud-street, #hud .hud-compass, #hud .hud-search, #hud .hud-risk, #hud .hud-speed, #hud .hud-current, #hud .hud-route, #hud .hud-modes { color: var(--rs-text); }
+
+#navCard, #hud .hud-nav, #hud .hud-traffic, #hud .hud-street, #hud .hud-risk, #hud .hud-current, #hud .hud-route, #hud .hud-modes {
+  background: linear-gradient(135deg, rgba(4, 24, 51, 0.97), rgba(2, 12, 30, 0.94));
+  border: 1px solid var(--rs-border);
+  border-radius: 18px;
+  box-shadow: var(--rs-glow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+#bottomPanel, #hud .hud-route {
+  border-color: rgba(0, 191, 255, 0.8);
+  box-shadow: 0 -3px 22px rgba(0, 110, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+#recenterBtn, #hud .hud-btns button, #hud button, #bottomPanel button {
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+#recenterBtn, #hud .hud-btns button {
+  background: rgba(3, 20, 43, 0.94);
+  color: var(--rs-text);
+  border: 1px solid rgba(0, 191, 255, 0.65);
+  box-shadow: 0 0 10px rgba(0, 191, 255, 0.15);
+}
+
+#navCard svg, #bottomPanel svg, #hud svg { filter: drop-shadow(0 0 4px rgba(0, 191, 255, 0.32)); }
+#navCard small, #bottomPanel small, #hud small { color: var(--rs-muted); }
+
+#recenterBtn:active, #hud .hud-btns button:active, #hud button:active {
+  background: rgba(0, 104, 170, 0.48);
+  box-shadow: 0 0 16px rgba(0, 191, 255, 0.38);
+}
+
+@media (max-width: 600px) {
+  #navCard, #hud .hud-nav { border-radius: 15px; }
+  #bottomPanel, #hud .hud-route { border-radius: 17px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #recenterBtn, #hud button, #bottomPanel button { transition: none; }
+}
+
+/* ==========================================
+   LAYOUT DO MAPA E PAINÉIS
+   ========================================== */
+#navCard {
+  position:absolute; z-index:1000; top:10px; left:10px; right:10px; max-width:760px; margin:auto;
+  padding:12px; display:flex; flex-direction:column; gap:8px;
+}
+.brand { display:flex; align-items:center; gap:8px; font-size:21px; font-weight:700; color:var(--rs-blue-light); text-shadow: 0 0 8px rgba(0,191,255,0.5); }
+.search { display:flex; align-items:center; gap:8px; }
+.origin, .dest { height:46px; background:rgba(255,255,255,0.05); border:1px solid rgba(0,191,255,0.3); border-radius:12px; display:flex; align-items:center; padding:0 12px; flex:1; }
+.dot { width:11px; height:11px; border-radius:50%; background:var(--rs-blue); box-shadow:0 0 8px var(--rs-blue); margin-right:10px; }
+.search input { width:100%; border:0; outline:0; background:transparent; font-size:15px; color:var(--rs-text); }
+.go { height:46px; padding:0 20px; border:0; border-radius:12px; background:var(--rs-blue); color:#000; font-weight:700; font-size:15px; cursor:pointer; box-shadow: 0 0 15px rgba(0,191,255,0.4); }
+.status { font-size:13px; color:var(--rs-muted); padding: 4px 4px 0; }
+.routebox { display:none; margin-top:8px; padding:10px; border-top:1px solid rgba(0,191,255,0.2); }
+.routebox.show { display:block; }
+.route-title { font-weight:700; color:var(--rs-blue-light); font-size:15px; }
+.route-meta { font-size:13px; color:var(--rs-muted); margin-top:4px; }
+.route-actions { display:flex; gap:8px; margin-top:9px; }
+.route-actions button { border:0; border-radius:20px; padding:8px 13px; background:rgba(0,191,255,0.15); color:var(--rs-blue-light); font-weight:700; cursor:pointer; }
+
+.controls { position:absolute; z-index:1000; right:12px; bottom:112px; display:flex; flex-direction:column; gap:9px; }
+.round { width:50px; height:50px; border-radius:50%; background:var(--rs-bg); box-shadow:var(--rs-glow); border:1px solid var(--rs-border); font-size:21px; color:var(--rs-text); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.round:active { transform:scale(.96); }
+
+#bottomPanel {
+  position:absolute; z-index:1000; left:10px; right:10px; bottom:10px; max-width:760px; margin:auto;
+  padding:12px; display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--rs-muted);
+}
+
+.user-dot { width:22px; height:22px; border-radius:50%; background:var(--rs-blue); border:3px solid #fff; box-shadow:0 0 12px var(--rs-blue); }
+.dest-pin { font-size:32px; filter:drop-shadow(0 0 6px var(--rs-blue)); }
+
+/* ==========================================
+   MODO PARA-BRISA (HUD)
+   ========================================== */
+#hud { display:none; position:fixed; inset:0; z-index:2000; background:#000; }
+#cameraFeed { width:100%; height:100%; object-fit:cover; }
+#hud .hud-overlay { position:absolute; inset:0; background:linear-gradient(to bottom, rgba(3,16,37,0.8) 0%, rgba(3,16,37,0) 40%, rgba(3,16,37,0.9) 100%); pointer-events:none; }
+
+#hud .hud-nav { position:absolute; top:60px; left:50%; transform:translateX(-50%); padding:15px 30px; text-align:center; min-width:280px; }
+.hud-distance { font-size:56px; font-weight:bold; color:var(--rs-blue-light); text-shadow: 0 0 15px var(--rs-blue); line-height:1; }
+.hud-instruction { font-size:20px; margin-top:8px; }
+
+#hud .hud-speed { position:absolute; bottom:120px; left:20px; width:90px; height:90px; border-radius:50%; border:2px solid var(--rs-border); display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(3,16,37,0.8); box-shadow:var(--rs-glow); }
+.hud-speed-val { font-size:32px; font-weight:bold; color:var(--rs-blue-light); line-height:1; }
+.hud-speed-unit { font-size:12px; color:var(--rs-muted); }
+
+#hud .hud-risk { display:none; position:absolute; top:40%; left:50%; transform:translate(-50%, -50%); padding:20px; border-radius:16px; text-align:center; font-weight:bold; animation:pulse 1.5s infinite; background:rgba(255, 59, 48, 0.9); border-color:rgba(255, 59, 48, 1); box-shadow: 0 0 20px rgba(255, 59, 48, 0.5); }
+@keyframes pulse { 0% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-50%, -50%) scale(1.05); } 100% { transform: translate(-50%, -50%) scale(1); } }
+
+#hud .hud-btns { position:absolute; bottom:40px; left:50%; transform:translateX(-50%); display:flex; gap:15px; }
+#hud .hud-btns button { padding:12px 24px; border-radius:30px; font-weight:bold; font-size:16px; cursor:pointer; }
+
+.leaflet-control-attribution { background: rgba(3,16,37,0.7) !important; color: var(--rs-muted) !important; font-size:9px; }
+.leaflet-control-zoom a { background: var(--rs-bg) !important; color: var(--rs-text) !important; border-color: var(--rs-border) !important; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Painel Superior (NavCard) -->
+<section id="navCard">
+  <div class="brand"><span>🛡️</span> RotaSegura <small style="margin-left:auto; font-size:12px; font-weight:normal;">NEON HUD v2</small></div>
+  <div class="search">
+    <div class="origin"><span class="dot"></span><span>Sua localização</span></div>
+    <div class="dest"><span style="margin-right:8px;">⌖</span><input id="destino" autocomplete="off" placeholder="Para onde? Ex.: Maricá, RJ"></div>
+    <button class="go" id="buscar">Ir</button>
+  </div>
+  <div class="status" id="status">📡 Obtendo sua localização…</div>
+  <div class="routebox" id="routebox">
+    <div class="route-title">Rota principal</div>
+    <div class="route-meta" id="routeMeta"></div>
+    <div class="route-actions"><button id="recenterBtn">Recentrar rota</button></div>
+  </div>
+</section>
+
+<!-- Controles Laterais -->
+<div class="controls">
+  <button class="round" id="locate" title="Minha localização">⌾</button>
+  <button class="round" id="btnWindshield" title="Modo Para-brisa" style="display:none;">🚗</button>
+</div>
+
+<!-- Painel Inferior -->
+<div id="bottomPanel">
+  <div>🗺️ OpenStreetMap · OSRM</div>
+  <div id="gpsStatus">GPS: Buscando...</div>
+</div>
+
+<!-- Interface do Modo Para-brisa (HUD) -->
+<div id="hud">
+  <video id="cameraFeed" autoplay playsinline muted></video>
+  <div class="hud-overlay"></div>
+  
+  <div class="hud-nav">
+    <div class="hud-distance" id="hudDistance">350m</div>
+    <div class="hud-instruction" id="hudInstruction">Mantenha à direita</div>
+  </div>
+
+  <div class="hud-speed">
+    <div class="hud-speed-val" id="hudSpeed">46</div>
+    <div class="hud-speed-unit">km/h</div>
+  </div>
+
+  <div class="hud-risk" id="hudRiskAlert">
+    ⚠️ ÁREA DE RISCO<br><span style="font-size:14px; font-weight:normal; display:block; margin-top:5px;">Reduza a velocidade</span>
+  </div>
+
+  <div class="hud-btns">
+    <button onclick="toggleWindshield(false)"> Sair do HUD</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map=L.map('map',{zoomControl:false,preferCanvas:true,zoomAnimation:false}).setView([-22.9068,-43.1729],13);
+L.control.zoom({position:'bottomright'}).addTo(map);
+
+const osmDark=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:20,attribution:'© OSM © CARTO'});
+osmDark.addTo(map); // Já inicia no modo escuro para combinar com o Neon
+
+let userPos=null,userMarker=null,destMarker=null,routeLayers=[],lastBounds=null;
+const $=id=>document.getElementById(id);
+function setStatus(t){$('status').textContent=t; $('gpsStatus').textContent = 'GPS: ' + (t.includes('✅') ? 'Ativo' : t.includes('️') ? 'Erro' : 'Buscando...');}
+
+function drawUser(pos){
+  userPos=[pos.coords.latitude,pos.coords.longitude];
+  const icon=L.divIcon({className:'',html:'<div class="user-dot"></div>',iconSize:[22,22],iconAnchor:[11,11]});
+  if(userMarker)userMarker.setLatLng(userPos);
+  else userMarker=L.marker(userPos,{icon,zIndexOffset:1000}).addTo(map);
+  checkWindshieldAvailability();
+}
+
+function locate(){
+  if(!navigator.geolocation){setStatus('⚠️ Navegador sem GPS. Clique no mapa.');return}
+  setStatus('📡 Solicitando localização…');
+  navigator.geolocation.getCurrentPosition(
+    p=>{drawUser(p);map.setView(userPos,15);setStatus('✅ Localização ativa.')},
+    (error)=>{
+      let msg = '⚠️ Erro no GPS.';
+      if (error.code === 1) msg = '⚠️ Permissão negada. Clique no mapa.';
+      setStatus(msg);
+    },
+    {enableHighAccuracy:true,timeout:12000,maximumAge:5000}
+  );
+}
+
+map.on('click', (e) => {
+  if (!userPos) {
+    userPos = [e.latlng.lat, e.latlng.lng];
+    drawUser({ coords: { latitude: userPos[0], longitude: userPos[1] } });
+    setStatus('✅ Ponto definido manualmente.');
+  }
+});
+
+$('locate').onclick=locate; locate();
+
+function clearRoutes(){routeLayers.forEach(x=>map.removeLayer(x));routeLayers=[];lastBounds=null}
+async function geocode(q){
+  const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&q='+encodeURIComponent(q),{headers:{'Accept-Language':'pt-BR'}});
+  if(!r.ok)throw new Error('geocode');const a=await r.json();if(!a.length)throw new Error('notfound');
+  return{lat:+a[0].lat,lon:+a[0].lon,name:a[0].display_name}
+}
+async function route(from,to){
+  const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to.lon},${to.lat}?overview=full&geometries=geojson&alternatives=true&steps=false`);
+  if(!r.ok)throw new Error('route');return r.json()
+}
+function drawRoutes(data){
+  clearRoutes();const routes=data.routes||[];
+  routes.slice(0,3).forEach((r,i)=>{
+    const pts=r.geometry.coordinates.map(c=>[c[1],c[0]]);
+    const casing=L.polyline(pts,{color:'#00bfff',weight:i===0?10:6,opacity:i===0?.3:.1,lineCap:'round',lineJoin:'round'}).addTo(map);
+    const line=L.polyline(pts,{color:i===0?'#42dcff':'#0077b6',weight:i===0?6:3,opacity:i===0?1:.6,dashArray:i===0?null:'8 8',lineCap:'round',lineJoin:'round'}).addTo(map);
+    routeLayers.push(casing,line)
+  });
+  if(routes[0]){
+    $('routeMeta').textContent=`⏱️ ${Math.max(1,Math.round(routes[0].duration/60))} min  ·  📏 ${(routes[0].distance/1000).toFixed(1)} km`;
+    $('routebox').classList.add('show')
+  }
+  const all=[];routes.slice(0,3).forEach(r=>r.geometry.coordinates.forEach(c=>all.push([c[1],c[0]])));
+  if(all.length){lastBounds=L.latLngBounds(all);map.fitBounds(lastBounds,{paddingTopLeft:[18,180],paddingBottomRight:[70,100],maxZoom:16})}
+}
+async function buscar(){
+  const q=$('destino').value.trim();if(!q){setStatus('Digite um destino.');return}
+  if(!userPos){setStatus('Aguardando localização…');locate();return}
+  const btn=$('buscar');btn.disabled=true;btn.textContent='…';
+  try{
+    setStatus(' Localizando destino…');const dest=await geocode(q);
+    if(destMarker)map.removeLayer(destMarker);
+    const icon=L.divIcon({className:'',html:'<div class="dest-pin"></div>',iconSize:[34,34],iconAnchor:[17,32]});
+    destMarker=L.marker([dest.lat,dest.lon],{icon}).addTo(map);
+    setStatus('️ Calculando rota…');const data=await route(userPos,dest);
+    if(data.code!=='Ok'||!data.routes.length)throw new Error('noroute');
+    drawRoutes(data);setStatus('✅ Rota calculada.')
+  }catch(e){
+    setStatus(e.message==='notfound'?'❌ Destino não encontrado.':'❌ Erro ao calcular rota.')
+  }finally{btn.disabled=false;btn.textContent='Ir'}
+}
+$('buscar').onclick=buscar;
+$('destino').addEventListener('keydown',e=>{if(e.key==='Enter')buscar()});
+$('recenterBtn').onclick=()=>{if(lastBounds)map.fitBounds(lastBounds,{paddingTopLeft:[18,180],paddingBottomRight:[70,100],maxZoom:16})};
+
+// --- LÓGICA DO MODO PARA-BRISA (HUD) ---
+let cameraStream = null;
+function checkWindshieldAvailability() { if (userPos) $('btnWindshield').style.display = 'flex'; }
+
+async function toggleWindshield(show) {
+  const view = $('hud');
+  const video = $('cameraFeed');
+  if (show) {
+    view.style.display = 'block';
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+      video.srcObject = cameraStream;
+      $('hudDistance').textContent = "350m";
+      $('hudInstruction').textContent = "Curva suave à direita";
+      setTimeout(() => { $('hudRiskAlert').style.display = 'block'; }, 4000);
+    } catch (err) {
+      alert('Erro ao acessar câmera.'); toggleWindshield(false);
+    }
+  } else {
+    view.style.display = 'none';
+    if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+    $('hudRiskAlert').style.display = 'none';
+  }
+}
+$('btnWindshield').onclick = () => toggleWindshield(true);
+</script>
+</body>
+</html>
