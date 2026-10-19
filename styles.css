@@ -1,0 +1,138 @@
+
+/* ==========================================
+   ROTASEGURA — VISUAL NEON HUD
+   Tema azul profundo + ciano
+   Sem efeito de chuva artificial
+   ========================================== */
+
+:root {
+  --rs-bg: rgba(3, 16, 37, 0.94);
+  --rs-bg-light: rgba(7, 28, 57, 0.92);
+  --rs-blue: #00bfff;
+  --rs-blue-light: #42dcff;
+  --rs-border: rgba(0, 191, 255, 0.72);
+  --rs-text: #f4faff;
+  --rs-muted: #b8d8ee;
+  --rs-glow: 0 0 12px rgba(0, 191, 255, 0.28);
+}
+
+/* Painéis de navegação */
+#navCard,
+#bottomPanel,
+#hud .hud-overlay,
+#hud .hud-nav,
+#hud .hud-traffic,
+#hud .hud-street,
+#hud .hud-compass,
+#hud .hud-search,
+#hud .hud-risk,
+#hud .hud-speed,
+#hud .hud-current,
+#hud .hud-route,
+#hud .hud-modes {
+  color: var(--rs-text);
+}
+
+/* Cartões escuros com borda luminosa */
+#navCard,
+#hud .hud-nav,
+#hud .hud-traffic,
+#hud .hud-street,
+#hud .hud-risk,
+#hud .hud-current,
+#hud .hud-route,
+#hud .hud-modes {
+  background: linear-gradient(
+    135deg,
+    rgba(4, 24, 51, 0.97),
+    rgba(2, 12, 30, 0.94)
+  );
+  border: 1px solid var(--rs-border);
+  border-radius: 18px;
+  box-shadow: var(--rs-glow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Painel inferior */
+#bottomPanel,
+#hud .hud-route {
+  border-color: rgba(0, 191, 255, 0.8);
+  box-shadow:
+    0 -3px 22px rgba(0, 110, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Botões circulares do HUD */
+#recenterBtn,
+#hud .hud-btns button,
+#hud button,
+#bottomPanel button {
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+#recenterBtn,
+#hud .hud-btns button {
+  background: rgba(3, 20, 43, 0.94);
+  color: var(--rs-text);
+  border: 1px solid rgba(0, 191, 255, 0.65);
+  box-shadow: 0 0 10px rgba(0, 191, 255, 0.15);
+}
+
+/* Ícones e elementos de destaque */
+#navCard svg,
+#bottomPanel svg,
+#hud svg {
+  filter: drop-shadow(0 0 4px rgba(0, 191, 255, 0.32));
+}
+
+/* Textos secundários */
+#navCard small,
+#bottomPanel small,
+#hud small {
+  color: var(--rs-muted);
+}
+
+/* Barra superior */
+#topBar {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Controles com toque visual consistente */
+#recenterBtn:active,
+#hud .hud-btns button:active,
+#hud button:active {
+  background: rgba(0, 104, 170, 0.48);
+  box-shadow: 0 0 16px rgba(0, 191, 255, 0.38);
+}
+
+/* Ajustes para telas pequenas */
+@media (max-width: 600px) {
+  #navCard,
+  #hud .hud-nav {
+    border-radius: 15px;
+  }
+
+  #bottomPanel,
+  #hud .hud-route {
+    border-radius: 17px;
+  }
+
+  #hud .hud-modes {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+}
+
+/* Respeita usuários que preferem menos animações */
+@media (prefers-reduced-motion: reduce) {
+  #recenterBtn,
+  #hud button,
+  #bottomPanel button {
+    transition: none;
+  }
+}
