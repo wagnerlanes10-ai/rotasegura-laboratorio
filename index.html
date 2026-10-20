@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a1628">
+<title>RotaSegura</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a1628; color: #e8f4ff; }
+
+#map { position: absolute; inset: 0; z-index: 1; background: #0a1628; }
+
+#navCard {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 1000;
+  background: rgba(10, 22, 40, 0.95);
+  border: 1px solid rgba(41, 182, 246, 0.3);
+  border-radius: 16px;
+  padding: 14px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #29b6f6;
+  margin-bottom: 12px;
+}
+
+.weather-badge {
+  font-size: 12px;
+  color: #8aa4c0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+}
+
+.search-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.search-input {
+  flex: 1;
+  height: 44px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(41, 182, 246, 0.3);
+  border-radius: 12px;
+  padding: 0 14px;
+  color: #e8f4ff;
+  font-size: 15px;
+  outline: none;
+}
+
+.search-btn {
+  height: 44px;
+  padding: 0 22px;
+  background: linear-gradient(135deg, #29b6f6, #0288d1);
+  border: none;
+  border-radius: 12px;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.status-text {
+  font-size: 12px;
+  color: #8aa4c0;
+}
+
+.side-controls {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.side-btn {
+  width: 44px;
+  height: 44px;
+  background: rgba(10, 22, 40, 0.9);
+  border: 1px solid rgba(41, 182, 246, 0.3);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+}
+
+#bottomHUD {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 1000;
+  background: rgba(10, 22, 40, 0.95);
+  border: 1px solid rgba(41, 182, 246, 0.3);
+  border-radius: 16px;
+  padding: 12px;
+  display: none;
+  backdrop-filter: blur(16px);
+}
+
+#bottomHUD.show { display: flex; gap: 12px; align-items: center; }
+
+.speedo {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 3px solid rgba(41, 182, 246, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.speedo-val { font-size: 18px; font-weight: 700; color: #29b6f6; }
+.speedo-unit { font-size: 9px; color: #8aa4c0; }
+
+.hud-info { flex: 1; display: flex; gap: 16px; align-items: center; }
+.hud-item { text-align: center; }
+.hud-val { font-size: 16px; font-weight: 700; }
+.hud-label { font-size: 10px; color: #8aa4c0; }
+
+#windshieldView {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: #000;
+}
+
+#cameraFeed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#rainCanvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hud-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(3,16,37,0.7) 0%, transparent 40%, rgba(3,16,37,0.8) 100%);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.ws-nav {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 22, 40, 0.95);
+  border: 1px solid rgba(41, 182, 246, 0.3);
+  border-radius: 16px;
+  padding: 14px 24px;
+  text-align: center;
+  min-width: 260px;
+  z-index: 4;
+}
+
+.ws-nav-action { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+.ws-nav-dist { font-size: 14px; color: #29b6f6; }
+
+.ws-exit {
+  position: absolute;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 28px;
+  background: rgba(10, 22, 40, 0.95);
+  border: 1px solid rgba(41, 182, 246, 0.3);
+  border-radius: 24px;
+  color: #e8f4ff;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 5;
+}
+
+#rainToggle {
+  position: absolute;
+  right: 14px;
+  bottom: 110px;
+  padding: 10px 14px;
+  background: rgba(10, 22, 40, 0.95);
+  border: 1px solid rgba(41, 182, 246, 0.3);
+  border-radius: 20px;
+  color: #e8f4ff;
+  font-size: 13px;
+  cursor: pointer;
+  display: none;
+  z-index: 5;
+}
+
+#rainStatus {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  background: rgba(10, 22, 40, 0.9);
+  border: 1px solid rgba(41, 182, 246, 0.3);
+  border-radius: 20px;
+  font-size: 12px;
+  color: #8aa4c0;
+  z-index: 5;
+  display: none;
+}
+
+.leaflet-control-zoom { border: none !important; }
+.leaflet-control-zoom a {
+  background: rgba(10, 22, 40, 0.9) !important;
+  color: #e8f4ff !important;
+  border: 1px solid rgba(41, 182, 246, 0.3) !important;
+  width: 40px !important;
+  height: 40px !important;
+  line-height: 40px !important;
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="navCard">
+  <div class="brand">
+    <span>🛡️ RotaSegura</span>
+    <div class="weather-badge" id="weatherBadge">
+      <span>🌤️</span>
+      <span id="weatherText">Carregando clima...</span>
+    </div>
+  </div>
+  <div class="search-row">
+    <input class="search-input" id="destino" placeholder="Para onde? Ex: Itaboraí, RJ">
+    <button class="search-btn" id="buscar">Ir</button>
+  </div>
+  <div class="status-text" id="status">📡 Obtendo sua localização...</div>
+</div>
+
+<div class="side-controls">
+  <button class="side-btn" id="locateBtn" title="GPS">📍</button>
+  <button class="side-btn" id="wsBtn" title="Para-brisa" style="display:none;"></button>
+  <button class="side-btn" id="themeBtn" title="Tema">🌙</button>
+</div>
+
+<div id="bottomHUD">
+  <div class="speedo">
+    <div class="speedo-val" id="speedVal">0</div>
+    <div class="speedo-unit">km/h</div>
+  </div>
+  <div class="hud-info">
+    <div class="hud-item">
+      <div class="hud-val" id="hudDist">350m</div>
+      <div class="hud-label">distância</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-val" id="hudTime">12 min</div>
+      <div class="hud-label">tempo</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-val" id="hudKm">8.4 km</div>
+      <div class="hud-label">total</div>
+    </div>
+  </div>
+</div>
+
+<div id="windshieldView">
+  <video id="cameraFeed" autoplay playsinline muted></video>
+  <canvas id="rainCanvas"></canvas>
+  <div class="hud-overlay"></div>
+  
+  <div id="rainStatus">️ Sem chuva agora</div>
+  
+  <div class="ws-nav">
+    <div class="ws-nav-action" id="wsAction">Siga em frente</div>
+    <div class="ws-nav-dist" id="wsDist">350 m</div>
+  </div>
+  
+  <button class="ws-exit" onclick="closeWindshield()">Sair do Para-brisa</button>
+  <button id="rainToggle">💧 Chuva: OFF</button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map').setView([-22.9068, -43.1729], 13);
+
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '© OpenStreetMap'
+}).addTo(map);
+
+let userPos = null;
+let userMarker = null;
+let destMarker = null;
+let routeLines = [];
+let currentWeather = { raining: false, precipitation: 0 };
+
+const $ = id => document.getElementById(id);
+
+// ===== CONSULTAR CLIMA REAL (Open-Meteo - gratuita, sem API key) =====
+async function consultarClima(lat, lon) {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=precipitation,rain,showers,weathercode&timezone=America/Sao_Paulo`;
+    const res = await fetch(url);
+    const data = await res.json();
+    
+    const precip = data.current.precipitation || 0;
+    const rain = data.current.rain || 0;
+    const showers = data.current.showers || 0;
+    const weatherCode = data.current.weathercode || 0;
+    
+    // Weather codes que indicam chuva (WMO):
+    // 51-55: garoa, 61-65: chuva, 80-82: pancadas, 95-99: tempestade
+    const codigosChuva = [51,53,55,61,63,65,80,81,82,95,96,99];
+    const estaChovendo = codigosChuva.includes(weatherCode) || precip > 0 || rain > 0 || showers > 0;
+    
+    currentWeather = {
+      raining: estaChovendo,
+      precipitation: precip,
+      weatherCode: weatherCode
+    };
+    
+    atualizarBadgeClima();
+    return estaChovendo;
+  } catch (err) {
+    console.error('Erro ao consultar clima:', err);
+    $('weatherText').textContent = 'Clima indisponível';
+    return false;
+  }
+}
+
+function atualizarBadgeClima() {
+  const badge = $('weatherBadge');
+  const text = $('weatherText');
+  
+  if (currentWeather.raining) {
+    const intensidade = currentWeather.precipitation;
+    let icone = '🌧️';
+    let descricao = 'Chovendo';
+    
+    if (intensidade > 10) { icone = '️'; descricao = 'Chuva forte'; }
+    else if (intensidade > 2.5) { icone = '🌧️'; descricao = 'Chuva moderada'; }
+    else if (intensidade > 0) { icone = '🌦️'; descricao = 'Garoa'; }
+    
+    text.textContent = `${descricao} (${currentWeather.precipitation.toFixed(1)}mm)`;
+    badge.querySelector('span').textContent = icone;
+  } else {
+    const cod = currentWeather.weathercode;
+    let icone = '☀️';
+    let descricao = 'Sem chuva';
+    
+    if (cod === 0 || cod === 1) { icone = '☀️'; descricao = 'Céu limpo'; }
+    else if (cod === 2 || cod === 3) { icone = '⛅'; descricao = 'Nublado'; }
+    else if (cod >= 45 && cod <= 48) { icone = '🌫️'; descricao = 'Neblina'; }
+    
+    text.textContent = descricao;
+    badge.querySelector('span').textContent = icone;
+  }
+}
+
+// GPS
+function locate() {
+  $('status').textContent = '📡 Buscando localização...';
+  
+  if (!navigator.geolocation) {
+    $('status').textContent = '⚠️ GPS não suportado. Toque no mapa.';
+    return;
+  }
+  
+  navigator.geolocation.getCurrentPosition(
+    async pos => {
+      userPos = [pos.coords.latitude, pos.coords.longitude];
+      
+      if (userMarker) {
+        userMarker.setLatLng(userPos);
+      } else {
+        const icon = L.divIcon({
+          className: 'user-marker',
+          html: '<div style="width:20px;height:20px;background:#29b6f6;border-radius:50%;border:3px solid white;box-shadow:0 0 10px rgba(41,182,246,0.5);"></div>',
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+        userMarker = L.marker(userPos, { icon }).addTo(map);
+      }
+      
+      map.setView(userPos, 15);
+      $('status').textContent = '✅ Localização ativa';
+      $('wsBtn').style.display = 'flex';
+      
+      // Consultar clima real da localização
+      await consultarClima(userPos[0], userPos[1]);
+    },
+    err => {
+      const msgs = ['Permissão negada', 'GPS indisponível', 'Tempo esgotado'];
+      $('status').textContent = '️ ' + (msgs[err.code - 1] || 'Erro no GPS');
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+  );
+}
+
+map.on('click', e => {
+  if (!userPos) {
+    userPos = [e.latlng.lat, e.latlng.lng];
+    const icon = L.divIcon({
+      html: '<div style="width:20px;height:20px;background:#29b6f6;border-radius:50%;border:3px solid white;"></div>',
+      iconSize: [20, 20]
+    });
+    userMarker = L.marker(userPos, { icon }).addTo(map);
+    $('status').textContent = '✅ Ponto definido';
+    $('wsBtn').style.display = 'flex';
+    consultarClima(userPos[0], userPos[1]);
+  }
+});
+
+$('locateBtn').onclick = locate;
+locate();
+
+async function buscarRota() {
+  const destino = $('destino').value.trim();
+  if (!destino) {
+    $('status').textContent = 'Digite um destino';
+    return;
+  }
+  
+  if (!userPos) {
+    $('status').textContent = 'Aguardando localização...';
+    locate();
+    return;
+  }
+  
+  $('buscar').disabled = true;
+  $('buscar').textContent = '...';
+  $('status').textContent = '🔎 Buscando destino...';
+  
+  try {
+    const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(destino)}`);
+    const geoData = await geoRes.json();
+    
+    if (!geoData.length) {
+      throw new Error('Destino não encontrado');
+    }
+    
+    const dest = { lat: parseFloat(geoData[0].lat), lon: parseFloat(geoData[0].lon) };
+    
+    if (destMarker) map.removeLayer(destMarker);
+    destMarker = L.marker([dest.lat, dest.lon]).addTo(map);
+    
+    $('status').textContent = '🛣️ Calculando rota...';
+    
+    const routeRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${userPos[1]},${userPos[0]};${dest.lon},${dest.lat}?overview=full&geometries=geojson`);
+    const routeData = await routeRes.json();
+    
+    if (routeData.code !== 'Ok' || !routeData.routes.length) {
+      throw new Error('Rota não encontrada');
+    }
+    
+    const route = routeData.routes[0];
+    const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+    
+    routeLines.forEach(l => map.removeLayer(l));
+    routeLines = [];
+    
+    const glow = L.polyline(coords, { color: '#29b6f6', weight: 12, opacity: 0.4 }).addTo(map);
+    const line = L.polyline(coords, { color: '#42dcff', weight: 6, opacity: 1 }).addTo(map);
+    routeLines.push(glow, line);
+    
+    const timeMin = Math.round(route.duration / 60);
+    const distKm = (route.distance / 1000).toFixed(1);
+    
+    $('hudDist').textContent = '350m';
+    $('hudTime').textContent = timeMin + ' min';
+    $('hudKm').textContent = distKm + ' km';
+    $('wsAction').textContent = 'Siga em frente';
+    $('wsDist').textContent = '350 m';
+    
+    $('bottomHUD').classList.add('show');
+    $('status').textContent = '✅ Rota calculada';
+    
+    map.fitBounds(L.latLngBounds(coords), { padding: [80, 20] });
+    
+  } catch (err) {
+    $('status').textContent = ' ' + err.message;
+  } finally {
+    $('buscar').disabled = false;
+    $('buscar').textContent = 'Ir';
+  }
+}
+
+$('buscar').onclick = buscarRota;
+$('destino').addEventListener('keypress', e => { if (e.key === 'Enter') buscarRota(); });
+
+let nightMode = true;
+$('themeBtn').onclick = () => {
+  nightMode = !nightMode;
+  document.body.style.background = nightMode ? '#0a1628' : '#eef2f6';
+  $('themeBtn').textContent = nightMode ? '🌙' : '☀️';
+};
+
+// ===== MODO PARA-BRISA COM CHUVA INTELIGENTE =====
+let cameraStream = null;
+let rainActive = false;
+let rainForced = false; // Usuário forçou manualmente
+
+$('wsBtn').onclick = async () => {
+  $('windshieldView').style.display = 'block';
+  $('rainToggle').style.display = 'block';
+  $('rainStatus').style.display = 'block';
+  
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ 
+      video: { facingMode: 'environment' } 
+    });
+    $('cameraFeed').srcObject = cameraStream;
+    
+    // Atualizar status do clima no para-brisa
+    atualizarStatusParaBrisa();
+    
+    // Só ativar chuva se estiver chovendo de verdade (ou se o usuário forçar)
+    if (currentWeather.raining) {
+      rainActive = true;
+      rainForced = false;
+      initRain();
+    } else {
+      rainActive = false;
+      rainForced = false;
+    }
+    
+    atualizarBotaoChuva();
+    
+  } catch (err) {
+    alert('Erro ao acessar câmera');
+    closeWindshield();
+  }
+};
+
+function atualizarStatusParaBrisa() {
+  const status = $('rainStatus');
+  if (currentWeather.raining) {
+    status.textContent = `🌧️ Chuva detectada (${currentWeather.precipitation.toFixed(1)}mm/h)`;
+    status.style.borderColor = 'rgba(41, 182, 246, 0.6)';
+    status.style.color = '#29b6f6';
+  } else {
+    status.textContent = '☀️ Sem chuva agora';
+    status.style.borderColor = 'rgba(41, 182, 246, 0.3)';
+    status.style.color = '#8aa4c0';
+  }
+}
+
+function atualizarBotaoChuva() {
+  const btn = $('rainToggle');
+  if (rainActive) {
+    btn.textContent = '💧 Chuva: ON';
+    btn.style.background = 'rgba(41, 182, 246, 0.2)';
+  } else {
+    btn.textContent = '💧 Chuva: OFF';
+    btn.style.background = 'rgba(10, 22, 40, 0.95)';
+  }
+}
+
+// Botão para forçar chuva manualmente (caso o usuário queira testar)
+$('rainToggle').onclick = () => {
+  rainForced = !rainForced;
+  rainActive = rainForced;
+  
+  if (rainActive) {
+    initRain();
+  } else {
+    if (window.rainAnim) {
+      cancelAnimationFrame(window.rainAnim);
+    }
+    const canvas = $('rainCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  
+  atualizarBotaoChuva();
+};
+
+function closeWindshield() {
+  $('windshieldView').style.display = 'none';
+  $('rainToggle').style.display = 'none';
+  $('rainStatus').style.display = 'none';
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+  }
+  if (window.rainAnim) {
+    cancelAnimationFrame(window.rainAnim);
+  }
+  rainActive = false;
+}
+
+// Efeito de chuva
+function initRain() {
+  const canvas = $('rainCanvas');
+  const ctx = canvas.getContext('2d');
+  
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  
+  const drops = [];
+  const quantidade = Math.min(150, Math.max(60, Math.round(canvas.width * canvas.height / 10000)));
+  
+  for (let i = 0; i < quantidade; i++) {
+    drops.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      length: 15 + Math.random() * 25,
+      speed: 8 + Math.random() * 12,
+      opacity: 0.2 + Math.random() * 0.3
+    });
+  }
+  
+  function draw() {
+    if (!rainActive || $('windshieldView').style.display === 'none') {
+      window.rainAnim = requestAnimationFrame(draw);
+      return;
+    }
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    drops.forEach(drop => {
+      ctx.strokeStyle = `rgba(200, 230, 255, ${drop.opacity})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(drop.x, drop.y);
+      ctx.lineTo(drop.x - 1, drop.y + drop.length);
+      ctx.stroke();
+      
+      drop.y += drop.speed;
+      drop.x -= 0.5;
+      
+      if (drop.y > canvas.height) {
+        drop.y = -drop.length;
+        drop.x = Math.random() * canvas.width;
+      }
+    });
+    
+    window.rainAnim = requestAnimationFrame(draw);
+  }
+  
+  if (window.rainAnim) cancelAnimationFrame(window.rainAnim);
+  draw();
+}
+
+// Simular velocidade
+setInterval(() => {
+  if ($('bottomHUD').classList.contains('show')) {
+    const speed = Math.floor(Math.random() * 40) + 40;
+    $('speedVal').textContent = speed;
+  }
+}, 2000);
+
+// Atualizar clima a cada 5 minutos
+setInterval(() => {
+  if (userPos) {
+    consultarClima(userPos[0], userPos[1]);
+    if ($('windshieldView').style.display === 'block') {
+      atualizarStatusParaBrisa();
+    }
+  }
+}, 300000);
+</script>
+</body>
+</html>
