@@ -499,6 +499,7 @@ async function buscarRota() {
     $('wsDist').textContent = '350 m';
     
     $('bottomHUD').classList.add('show');
+    $('wsBtn').style.display = 'flex';
     $('status').textContent = '✅ Rota calculada';
     
     map.fitBounds(L.latLngBounds(coords), { padding: [80, 20] });
