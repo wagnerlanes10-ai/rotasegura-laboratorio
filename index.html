@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050d1a">
+<meta name="description" content="RotaSegura — protótipo de navegação com mapa noturno 3D, alerta de chuva e HUD no para-brisa.">
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' https://unpkg.com;
+  style-src 'self' 'unsafe-inline' https://unpkg.com;
+  img-src 'self' data: https://*.tile.openstreetmap.org;
+  connect-src 'self' https://nominatim.openstreetmap.org https://router.project-osrm.org https://api.open-meteo.com;
+  media-src 'self' blob:;
+  object-src 'none';
+  base-uri 'self';
+  form-action 'none';
+">
+<title>RotaSegura — Demo</title>
+
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="anonymous">
+
+<style>
+:root {
+  --neon: #00bfff;
+  --neon-bright: #42dcff;
+  --neon-glow: rgba(0, 191, 255, 0.6);
+  --glass: rgba(5, 15, 35, 0.88);
+  --glass-border: rgba(0, 191, 255, 0.45);
+  --text: #e8f4ff;
+  --muted: #8aa4c0;
+  --danger: #ff5252;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%; overflow: hidden;
+  background: #000; color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+input, textarea, [contenteditable] { user-select: text; }
+
+/* ===== MAPA 3D NOTURNO ===== */
+#map {
+  position: absolute; inset: 0; z-index: 1;
+  background: #050d1a;
+  overflow: hidden;
+}
+#map.map-3d {
+  transform: perspective(1200px) rotateX(35deg) scale(1.3);
+  transform-origin: 50% 70%;
+}
+#map.map-3d .leaflet-tile-pane {
+  filter: brightness(0.35) contrast(1.3) saturate(0.6) hue-rotate(200deg);
+}
+#map.map-3d .leaflet-control-zoom { display: none; }
+#map.map-day .leaflet-tile-pane {
+  filter: brightness(1) contrast(1) saturate(1) hue-rotate(0deg);
+}
+
+/* canvases vivem DENTRO do #map para herdar o transform 3D e ficarem alinhados */
+#mapRainCanvas, #routeArrowCanvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  display: block;
+}
+#mapRainCanvas { z-index: 450; }
+#routeArrowCanvas { z-index: 460; }
+
+/* ===== GLASS ===== */
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5),
+              inset 0 1px 0 rgba(255,255,255,0.08),
+              0 0 20px rgba(0,191,255,0.15);
+}
+
+/* ===== STATUS BAR ===== */
+#statusBar {
+  position: absolute; top: 10px; left: 10px; right: 10px;
+  z-index: 500; padding: 10px 14px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px; font-weight: 600;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; }
+.brand-icon {
+  width: 30px; height: 30px;
+  background: linear-gradient(135deg, var(--neon), var(--neon-bright));
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 15px var(--neon-glow);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.brand-sub { font-size: 10px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+.demo-badge {
+  font-size: 9px;
+  background: var(--danger);
+  color: #fff;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.status-info { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 6px 10px; }
+
+/* ===== NAV CARD ===== */
+#navCard {
+  position: absolute; top: 75px; left: 12px;
+  z-index: 500; padding: 14px 16px;
+  display: flex; align-items: center; gap: 14px;
+  min-width: 260px; max-width: calc(100% - 24px);
+}
+.maneuver {
+  width: 56px; height: 56px;
+  background: linear-gradient(135deg, var(--neon), var(--neon-bright));
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 25px var(--neon-glow);
+  animation: pulseGlow 2s infinite;
+}
+@keyframes pulseGlow {
+  0%,100% { box-shadow: 0 0 20px var(--neon-glow); }
+  50%     { box-shadow: 0 0 32px rgba(0,191,255,0.9); }
+}
+.maneuver svg { width: 34px; height: 34px; fill: #fff; }
+.nav-text { flex: 1; min-width: 0; }
+.nav-text strong { display: block; font-size: 17px; font-weight: 700; line-height: 1.25; }
+.nav-text .dist { color: var(--neon-bright); font-size: 14px; font-weight: 600; margin-top: 4px; }
+
+.nav-action-btn {
+  width: 40px; height: 40px;
+  background: rgba(0,191,255,0.15);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  color: var(--neon-bright);
+  font-size: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.nav-action-btn:active { transform: scale(0.94); }
+
+#weatherBadge {
+  position: absolute; top: 75px; right: 12px;
+  z-index: 500; padding: 8px 14px;
+  font-size: 13px; font-weight: 600;
+  display: none; align-items: center; gap: 6px;
+}
+#weatherBadge.show { display: flex; }
+
+/* ===== BOTÕES LATERAIS ===== */
+.side-controls {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  z-index: 500; display: flex; flex-direction: column; gap: 10px;
+}
+.side-controls.left { left: 12px; }
+.side-controls.right { right: 12px; }
+.side-btn {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.side-btn:active { transform: scale(0.92); }
+.side-btn svg { width: 22px; height: 22px; fill: var(--neon-bright); filter: drop-shadow(0 0 4px var(--neon-glow)); }
+
+/* ===== HUD ===== */
+#bottomHUD {
+  position: absolute; bottom: 12px; left: 12px; right: 12px;
+  z-index: 500; padding: 12px 14px;
+  display: none; align-items: center; gap: 12px;
+}
+#bottomHUD.show { display: flex; }
+
+.speedo { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+.speedo svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.speedo-bg { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 5; }
+.speedo-fill {
+  fill: none; stroke: var(--neon); stroke-width: 5; stroke-linecap: round;
+  stroke-dasharray: 176; stroke-dashoffset: 176;
+  transition: stroke-dashoffset 0.6s ease;
+  filter: drop-shadow(0 0 6px var(--neon-glow));
+}
+.speedo-text {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.speedo-val { font-size: 20px; font-weight: 700; }
+.speedo-unit { font-size: 9px; color: var(--muted); margin-top: 2px; }
+.speedo-demo { font-size: 7px; color: var(--danger); font-weight: 700; letter-spacing: 0.5px; margin-top: 1px; }
+
+.hud-divider { width: 1px; height: 48px; background: linear-gradient(to bottom, transparent, var(--neon), transparent); flex-shrink: 0; }
+
+.hud-arrow { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.hud-arrow-icon {
+  width: 40px; height: 40px;
+  background: rgba(0,191,255,0.15);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.hud-arrow-icon svg { width: 26px; height: 26px; fill: var(--neon-bright); filter: drop-shadow(0 0 5px var(--neon-glow)); }
+.hud-arrow-dist { font-size: 18px; font-weight: 700; }
+.hud-arrow-label { font-size: 11px; color: var(--muted); }
+
+.hud-stats { display: flex; gap: 14px; }
+.hud-stat { text-align: center; }
+.hud-stat-val { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 4px; justify-content: center; }
+.hud-stat-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+/* ===== PARA-BRISA ===== */
+#windshield {
+  position: fixed; inset: 0; z-index: 2000;
+  display: none; overflow: hidden; background: #000;
+}
+#windshield.active { display: block; }
+#cameraFeed { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#wsRainCanvas, #wsArrowCanvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#wsRainCanvas { z-index: 2; }
+#wsArrowCanvas { z-index: 3; }
+.ws-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 30%, transparent 60%, rgba(0,0,0,0.7) 100%);
+  z-index: 4; pointer-events: none;
+}
+.ws-topbar {
+  position: absolute; top: 10px; left: 10px; right: 10px;
+  z-index: 10; padding: 10px 14px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+#wsNavCard {
+  position: absolute; top: 75px; left: 12px;
+  z-index: 10; padding: 14px 16px;
+  display: flex; align-items: center; gap: 14px;
+  min-width: 260px; max-width: calc(100% - 24px);
+}
+#wsBottomHUD {
+  position: absolute; bottom: 14px; left: 12px; right: 12px;
+  z-index: 10; padding: 12px 14px;
+  display: flex; align-items: center; gap: 12px;
+}
+#wsExitBtn {
+  position: absolute; bottom: 100px; right: 14px;
+  z-index: 10; padding: 10px 16px;
+  border-radius: 20px; font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer;
+  color: var(--text);
+  user-select: none; -webkit-tap-highlight-color: transparent;
+}
+#wsRainToggle {
+  position: absolute; top: 75px; right: 12px;
+  z-index: 10; padding: 8px 14px;
+  font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer;
+  user-select: none; -webkit-tap-highlight-color: transparent;
+}
+
+/* ===== BUSCA ===== */
+#searchPanel {
+  position: absolute; top: 75px; left: 12px; right: 12px;
+  z-index: 500; padding: 14px;
+  display: flex; gap: 10px;
+}
+#searchInput {
+  flex: 1; height: 44px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px; padding: 0 14px;
+  color: var(--text); font-size: 15px; outline: none;
+}
+#searchInput:focus { border-color: var(--neon-bright); }
+#searchBtn {
+  height: 44px; padding: 0 22px;
+  background: linear-gradient(135deg, var(--neon), var(--neon-bright));
+  border: none; border-radius: 12px;
+  color: #fff; font-weight: 700; cursor: pointer;
+  box-shadow: 0 0 15px var(--neon-glow);
+  user-select: none; -webkit-tap-highlight-color: transparent;
+}
+#searchBtn:disabled { opacity: 0.6; cursor: wait; }
+
+#statusText {
+  position: absolute; top: 130px; left: 12px;
+  z-index: 500; font-size: 12px; color: var(--muted);
+  padding: 4px 10px;
+}
+
+/* ===== RESPONSIVO ===== */
+@media (max-width: 480px) {
+  #weatherBadge { display: none !important; }
+  #wsRainToggle { top: auto; bottom: 100px; right: 14px; }
+  #bottomHUD, #wsBottomHUD { flex-wrap: wrap; row-gap: 10px; }
+  .hud-stats { gap: 10px; }
+  .speedo { width: 56px; height: 56px; }
+  .speedo-val { font-size: 18px; }
+  .hud-arrow-dist { font-size: 15px; }
+  #navCard, #wsNavCard { min-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="map" class="map-3d" aria-label="Mapa de navegação">
+  <canvas id="mapRainCanvas"></canvas>
+  <canvas id="routeArrowCanvas"></canvas>
+</div>
+
+<div id="statusBar" class="glass">
+  <div class="brand">
+    <div class="brand-icon" aria-hidden="true">🛡️</div>
+    <div>
+      <div>RotaSegura <span class="demo-badge" aria-label="aplicativo de demonstração">DEMO</span></div>
+      <div class="brand-sub">Seu destino mais seguro</div>
+    </div>
+  </div>
+  <div class="status-info glass">
+    <span id="clock">--:--</span>
+  </div>
+</div>
+
+<div id="searchPanel" class="glass">
+  <input id="searchInput" placeholder="Para onde? Ex: Centro, RJ" autocomplete="off">
+  <button id="searchBtn">Ir</button>
+</div>
+<div id="statusText" role="status" aria-live="polite">📡 Buscando localização...</div>
+
+<div id="weatherBadge" class="glass">
+  <span id="weatherIcon">🌧️</span><span id="weatherText">Chuva</span>
+</div>
+
+<div id="navCard" class="glass" style="display:none;">
+  <div class="maneuver" aria-hidden="true">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+  </div>
+  <div class="nav-text">
+    <strong id="navAction">Na rotatória, pegue a 2ª saída</strong>
+    <div class="dist" id="navDist">300 m</div>
+  </div>
+  <button id="newSearchBtn" class="nav-action-btn" aria-label="Nova busca" title="Nova busca">🔍</button>
+</div>
+
+<div class="side-controls left">
+  <div class="side-btn glass" role="button" tabindex="0" aria-label="Norte">
+    <svg viewBox="0 0 24 24"><path d="M12 2L4.5 20.3l.7.7L12 18l6.8 3 .7-.7z"/></svg>
+  </div>
+  <div class="side-btn glass" role="button" tabindex="0" aria-label="Música">
+    <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+  </div>
+  <div class="side-btn glass" role="button" tabindex="0" aria-label="Camadas">
+    <svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
+  </div>
+</div>
+
+<div class="side-controls right">
+  <div class="side-btn glass" id="locateBtn" role="button" tabindex="0" aria-label="Centralizar no meu local">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+  </div>
+  <div class="side-btn glass" id="windshieldBtn" role="button" tabindex="0" aria-label="Abrir modo para-brisa" style="display:none;">
+    <svg viewBox="0 0 24 24"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg>
+  </div>
+  <div class="side-btn glass" id="zoomInBtn" role="button" tabindex="0" aria-label="Aproximar">+</div>
+  <div class="side-btn glass" id="zoomOutBtn" role="button" tabindex="0" aria-label="Afastar">−</div>
+</div>
+
+<div id="bottomHUD" class="glass">
+  <div class="speedo">
+    <svg viewBox="0 0 64 64"><circle class="speedo-bg" cx="32" cy="32" r="28"/><circle class="speedo-fill" id="mapSpeedoFill" cx="32" cy="32" r="28"/></svg>
+    <div class="speedo-text">
+      <div class="speedo-val" id="mapSpeedVal">0</div>
+      <div class="speedo-unit">km/h</div>
+      <div class="speedo-demo">DEMO</div>
+    </div>
+  </div>
+  <div class="hud-divider"></div>
+  <div class="hud-arrow">
+    <div class="hud-arrow-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2L4.5 20.3l.7.7L12 18l6.8 3 .7-.7z"/></svg></div>
+    <div><div class="hud-arrow-dist" id="mapHudDist">300 m</div><div class="hud-arrow-label" id="mapHudLabel">Rotatória</div></div>
+  </div>
+  <div class="hud-divider"></div>
+  <div class="hud-stats">
+    <div class="hud-stat"><div class="hud-stat-val"><span id="mapTime">12 min</span></div><div class="hud-stat-label" id="mapKm">8,4 km</div></div>
+    <div class="hud-stat"><div class="hud-stat-val">🏁 <span id="mapArrival">14:44</span></div><div class="hud-stat-label">Chegada</div></div>
+  </div>
+</div>
+
+<!-- ===== PARA-BRISA ===== -->
+<div id="windshield">
+  <video id="cameraFeed" autoplay playsinline muted></video>
+  <canvas id="wsRainCanvas"></canvas>
+  <canvas id="wsArrowCanvas"></canvas>
+  <div class="ws-overlay"></div>
+
+  <div class="ws-topbar glass">
+    <div class="brand">
+      <div class="brand-icon" aria-hidden="true">🛡️</div>
+      <div>
+        <div>RotaSegura <span class="demo-badge">DEMO</span></div>
+        <div class="brand-sub">Seu destino mais seguro</div>
+      </div>
+    </div>
+    <div class="status-info glass"><span id="wsClock">--:--</span></div>
+  </div>
+
+  <div id="wsRainToggle" class="glass" role="button" tabindex="0" aria-label="Alternar chuva">
+    <span id="wsRainIcon">🌧️</span><span id="wsRainText">Chuva: ON</span>
+  </div>
+
+  <div id="wsNavCard" class="glass">
+    <div class="maneuver" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+    </div>
+    <div class="nav-text">
+      <strong id="wsNavAction">Na rotatória, pegue a 2ª saída</strong>
+      <div class="dist" id="wsNavDist">300 m</div>
+    </div>
+  </div>
+
+  <div class="side-controls left" style="z-index:10;">
+    <div class="side-btn glass" role="button" tabindex="0" aria-label="Norte">
+      <svg viewBox="0 0 24 24"><path d="M12 2L4.5 20.3l.7.7L12 18l6.8 3 .7-.7z"/></svg>
+    </div>
+    <div class="side-btn glass" role="button" tabindex="0" aria-label="Música">
+      <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+    </div>
+  </div>
+  <div class="side-controls right" style="z-index:10;">
+    <div class="side-btn glass" role="button" tabindex="0" aria-label="Bússola">
+      <svg viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" fill="none" stroke="var(--neon-bright)" stroke-width="1.5"/>
+        <polygon points="12,4 14,10 12,12 10,10" fill="#ff5252"/>
+        <polygon points="12,20 10,14 12,12 14,14" fill="white"/>
+      </svg>
+    </div>
+  </div>
+
+  <div id="wsBottomHUD" class="glass">
+    <div class="speedo">
+      <svg viewBox="0 0 64 64"><circle class="speedo-bg" cx="32" cy="32" r="28"/><circle class="speedo-fill" id="wsSpeedoFill" cx="32" cy="32" r="28"/></svg>
+      <div class="speedo-text">
+        <div class="speedo-val" id="wsSpeedVal">0</div>
+        <div class="speedo-unit">km/h</div>
+        <div class="speedo-demo">DEMO</div>
+      </div>
+    </div>
+    <div class="hud-divider"></div>
+    <div class="hud-arrow">
+      <div class="hud-arrow-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2L4.5 20.3l.7.7L12 18l6.8 3 .7-.7z"/></svg></div>
+      <div><div class="hud-arrow-dist" id="wsHudDist">300 m</div><div class="hud-arrow-label" id="wsHudLabel">Rotatória</div></div>
+    </div>
+    <div class="hud-divider"></div>
+    <div class="hud-stats">
+      <div class="hud-stat"><div class="hud-stat-val"><span id="wsTime">12 min</span></div><div class="hud-stat-label" id="wsKm">8,4 km</div></div>
+      <div class="hud-stat"><div class="hud-stat-val">🏁 <span id="wsArrival">14:44</span></div><div class="hud-stat-label">Chegada</div></div>
+    </div>
+  </div>
+
+  <button id="wsExitBtn" class="glass" aria-label="Sair do modo para-brisa">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+    Sair
+  </button>
+</div>
+
+<noscript>
+  <div style="position:fixed;inset:0;background:#050d1a;color:#e8f4ff;display:flex;align-items:center;justify-content:center;padding:20px;z-index:9999;text-align:center;font-family:sans-serif;">
+    RotaSegura precisa de JavaScript ativado para funcionar.
+  </div>
+</noscript>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin="anonymous"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+
+  /* ========== UTIL ========== */
+  function toast(msg, ms = 4000) {
+    let el = $('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      el.className = 'glass';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      el.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 20px;font-size:14px;max-width:90%;text-align:center;';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.style.display = 'block';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.display = 'none'; }, ms);
+  }
+
+  function setupCanvas(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return ctx;
+  }
+
+  function attachButton(el, fn) {
+    if (!el) return;
+    el.addEventListener('click', fn);
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); }
+    });
+  }
+
+  /* ========== RELÓGIO ========== */
+  function updateClock() {
+    const t = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    $('clock').textContent = t;
+    $('wsClock').textContent = t;
+  }
+  updateClock();
+  setInterval(updateClock, 30_000);
+
+  /* ========== TEMA DIA/NOITE ========== */
+  function updateTheme() {
+    const now = new Date();
+    const min = now.getHours() * 60 + now.getMinutes();
+    const isDay = min >= 300 && min <= 1050;   // 05:00 – 17:30
+    const mapEl = $('map');
+    mapEl.classList.toggle('map-day', isDay);
+    mapEl.classList.toggle('map-3d', !isDay);
+  }
+  updateTheme();
+  setInterval(updateTheme, 60_000);
+
+  /* ========== VOZ ========== */
+  function speak(text) {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'pt-BR'; u.rate = 1; u.pitch = 1;
+    speechSynthesis.speak(u);
+  }
+
+  /* ========== MAPA ========== */
+  const map = L.map('map', {
+    zoomControl: false,
+    attributionControl: false,
+    preferCanvas: true
+  }).setView([-22.9068, -43.1729], 14);
+
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    updateWhenIdle: true
+  }).addTo(map);
+
+  let userPos = null, userMarker = null, destMarker = null;
+  let routeCoords = [];
+  let routeLayers = [];             // polylines da rota (para limpar)
+  let rainRaf = null, arrowRaf = null;
+  let currentWeather = { raining: true, precipitation: 2.5 };
+
+  const userIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:22px;height:22px;background:#00bfff;border-radius:50%;border:3px solid white;box-shadow:0 0 20px rgba(0,191,255,0.9),0 0 0 8px rgba(0,191,255,0.3);"></div>',
+    iconSize: [22, 22], iconAnchor: [11, 11]
+  });
+
+  /* ========== GPS ========== */
+  function setUserPos(latlng, fromGps) {
+    userPos = [latlng.lat, latlng.lng];
+    if (userMarker) map.removeLayer(userMarker);
+    userMarker = L.marker(userPos, { icon: userIcon }).addTo(map);
+    map.setView(userPos, 16);
+    $('statusText').textContent = fromGps ? '✅ Localização ativa' : '📍 Posição definida manualmente';
+    consultarClima(userPos[0], userPos[1]);
+  }
+
+  function locate() {
+    $('statusText').textContent = '📡 Buscando localização...';
+    if (!navigator.geolocation) {
+      $('statusText').textContent = '❌ GPS indisponível';
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }, true),
+      () => { $('statusText').textContent = '⚠️ GPS negado. Toque no mapa.'; },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 5_000 }
+    );
+  }
+
+  attachButton($('locateBtn'), locate);
+  map.on('click', e => {
+    if (!userPos) setUserPos(e.latlng, false);
+  });
+  locate();
+
+  /* ========== CLIMA ========== */
+  async function consultarClima(lat, lon) {
+    try {
+      const r = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+        `&current=precipitation,weathercode&timezone=America/Sao_Paulo`
+      );
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const precip = d.current?.precipitation || 0;
+      const cod = d.current?.weathercode || 0;
+      const chuva = [51,53,55,61,63,65,80,81,82,95,96,99].includes(cod) || precip > 0;
+      currentWeather = { raining: chuva, precipitation: precip };
+      $('weatherBadge').classList.add('show');
+      $('weatherIcon').textContent = chuva ? '🌧️' : '☀️';
+      $('weatherText').textContent = chuva ? `Chuva: ${precip.toFixed(1)}mm` : 'Sem chuva';
+    } catch {
+      /* clima é opcional */
+    }
+  }
+
+  /* ========== LIMPAR ROTA ========== */
+  function clearRoute() {
+    routeLayers.forEach(l => map.removeLayer(l));
+    routeLayers = [];
+    if (rainRaf)  { cancelAnimationFrame(rainRaf);  rainRaf = null; }
+    if (arrowRaf) { cancelAnimationFrame(arrowRaf); arrowRaf = null; }
+    routeCoords = [];
+    $('bottomHUD').classList.remove('show');
+    $('navCard').style.display = 'none';
+    $('windshieldBtn').style.display = 'none';
+    $('searchPanel').style.display = 'flex';
+    $('statusText').style.display = 'block';
+  }
+
+  /* ========== BUSCAR ROTA ========== */
+  async function buscarRota() {
+    const q = $('searchInput').value.trim();
+    if (!q) { $('statusText').textContent = 'Digite um destino'; return; }
+    if (!userPos) { $('statusText').textContent = '⚠️ Precisamos da sua localização primeiro.'; return; }
+
+    const btn = $('searchBtn');
+    btn.disabled = true;
+    $('statusText').textContent = '🔎 Buscando destino...';
+    speak('Calculando rota');
+
+    try {
+      const geo = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(q)}`,
+        { headers: { 'Accept-Language': 'pt-BR' } }
+      );
+      const gd = await geo.json();
+      if (!gd.length) throw new Error('Destino não encontrado');
+
+      const dest = { lat: parseFloat(gd[0].lat), lon: parseFloat(gd[0].lon) };
+      if (destMarker) map.removeLayer(destMarker);
+      destMarker = L.marker([dest.lat, dest.lon], {
+        icon: L.divIcon({
+          className: '',
+          html: '<div style="width:28px;height:28px;background:#ff5252;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 0 15px rgba(255,82,82,0.8);"></div>',
+          iconSize: [28, 28], iconAnchor: [14, 28]
+        })
+      }).addTo(map);
+
+      $('statusText').textContent = '🛣️ Calculando rota...';
+      const rt = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/` +
+        `${userPos[1]},${userPos[0]};${dest.lon},${dest.lat}?overview=full&geometries=geojson`
+      );
+      const rd = await rt.json();
+      if (rd.code !== 'Ok' || !rd.routes?.length) throw new Error('Rota não encontrada');
+
+      // limpa rotas anteriores (não mexe no destino atual)
+      routeLayers.forEach(l => map.removeLayer(l));
+      routeLayers = [];
+      if (rainRaf)  { cancelAnimationFrame(rainRaf);  rainRaf = null; }
+      if (arrowRaf) { cancelAnimationFrame(arrowRaf); arrowRaf = null; }
+
+      routeCoords = rd.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+
+      const outer = L.polyline(routeCoords, { color: '#00bfff', weight: 14, opacity: 0.4, lineCap: 'round' }).addTo(map);
+      const mid   = L.polyline(routeCoords, { color: '#42dcff', weight: 7,  opacity: 1,   lineCap: 'round' }).addTo(map);
+      const inner = L.polyline(routeCoords, { color: '#ffffff', weight: 2,  opacity: 0.7, lineCap: 'round' }).addTo(map);
+      routeLayers = [outer, mid, inner];
+
+      const dur = Math.round(rd.routes[0].duration / 60);
+      const dist = (rd.routes[0].distance / 1000).toFixed(1).replace('.', ',');
+      const arr = new Date(Date.now() + rd.routes[0].duration * 1000);
+      const arrTime = arr.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+      $('mapTime').textContent = `${dur} min`;
+      $('wsTime').textContent  = `${dur} min`;
+      $('mapKm').textContent = `${dist} km`;
+      $('wsKm').textContent  = `${dist} km`;
+      $('mapArrival').textContent = arrTime;
+      $('wsArrival').textContent  = arrTime;
+
+      $('bottomHUD').classList.add('show');
+      $('searchPanel').style.display = 'none';
+      $('statusText').style.display = 'none';
+      $('navCard').style.display = 'flex';
+      $('windshieldBtn').style.display = 'flex';
+      $('weatherBadge').classList.add('show');
+      map.fitBounds(L.latLngBounds(routeCoords), { padding: [100, 20] });
+
+      initMapRain();
+      initRouteArrow();
+
+      setTimeout(() => {
+        speak(`Rota calculada. Distância de ${dist} quilômetros. Tempo estimado de ${dur} minutos. Chegada prevista às ${arrTime}`);
+      }, 800);
+
+    } catch (e) {
+      $('statusText').textContent = '❌ ' + e.message;
+      $('statusText').style.display = 'block';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  attachButton($('searchBtn'), buscarRota);
+  $('searchInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') buscarRota();
+  });
+
+  attachButton($('newSearchBtn'), () => {
+    clearRoute();
+    $('searchInput').value = '';
+    $('searchInput').focus();
+  });
+
+  /* ========== CHUVA NO MAPA ========== */
+  function initMapRain() {
+    if (rainRaf) cancelAnimationFrame(rainRaf);
+    const canvas = $('mapRainCanvas');
+    const ctx = setupCanvas(canvas);
+    const W = window.innerWidth, H = window.innerHeight;
+    const drops = [];
+    const COUNT = 80;
+    for (let i = 0; i < COUNT; i++) {
+      drops.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        speed: 12 + Math.random() * 20,
+        len: 12 + Math.random() * 18,
+        op: 0.15 + Math.random() * 0.25
+      });
+    }
+    function draw() {
+      if (document.hidden) { rainRaf = requestAnimationFrame(draw); return; }
+      ctx.clearRect(0, 0, W, H);
+      for (const d of drops) {
+        ctx.strokeStyle = `rgba(200,230,255,${d.op})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(d.x, d.y);
+        ctx.lineTo(d.x - 1, d.y + d.len);
+        ctx.stroke();
+        d.y += d.speed;
+        d.x -= 0.5;
+        if (d.y > H) { d.y = -d.len; d.x = Math.random() * W; }
+      }
+      rainRaf = requestAnimationFrame(draw);
+    }
+    rainRaf = requestAnimationFrame(draw);
+  }
+
+  /* ========== SETA NA ROTA ========== */
+  function initRouteArrow() {
+    if (arrowRaf) cancelAnimationFrame(arrowRaf);
+    const canvas = $('routeArrowCanvas');
+    const ctx = setupCanvas(canvas);
+    const t0 = performance.now();
+
+    function draw(now) {
+      if (document.hidden) { arrowRaf = requestAnimationFrame(draw); return; }
+      const W = window.innerWidth, H = window.innerHeight;
+      ctx.clearRect(0, 0, W, H);
+
+      if (routeCoords.length < 2) {
+        arrowRaf = requestAnimationFrame(draw);
+        return;
+      }
+
+      // progresso ping-pong (0 → 1 → 0) em ~10s por ciclo
+      const elapsed = (now - t0) / 1000;
+      const progress = (1 - Math.cos((elapsed * 0.3) * Math.PI)) / 2;
+
+      const n = routeCoords.length;
+      const idx = Math.min(Math.floor(progress * (n - 1)), n - 2);
+      const ptCurr = routeCoords[idx];
+      const ptNext = routeCoords[idx + 1];
+
+      const px = map.latLngToContainerPoint(ptCurr);
+      const pxNext = map.latLngToContainerPoint(ptNext);
+      const angle = Math.atan2(pxNext.y - px.y, pxNext.x - px.x);
+
+      ctx.save();
+      ctx.translate(px.x, px.y);
+      ctx.rotate(angle + Math.PI / 2);
+
+      // glow
+      ctx.shadowColor = '#00bfff';
+      ctx.shadowBlur = 25;
+      ctx.fillStyle = '#42dcff';
+      ctx.beginPath();
+      ctx.moveTo(0, -40);
+      ctx.lineTo(-22, 20); ctx.lineTo(-10, 12);
+      ctx.lineTo(-10, 40); ctx.lineTo(10, 40);
+      ctx.lineTo(10, 12); ctx.lineTo(22, 20);
+      ctx.closePath();
+      ctx.fill();
+
+      // contorno branco
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // ponto central
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(0, -10, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+      arrowRaf = requestAnimationFrame(draw);
+    }
+    arrowRaf = requestAnimationFrame(draw);
+  }
+
+  /* ========== MODO PARA-BRISA ========== */
+  let wsStream = null;
+  let wsRainOn = true;
+  let wsRainRaf = null, wsArrowRaf = null;
+
+  async function openWindshield() {
+    if (!userPos) { toast('Precisamos da sua localização primeiro.'); return; }
+    $('windshield').classList.add('active');
+    try {
+      wsStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      $('cameraFeed').srcObject = wsStream;
+      initWsRain();
+      initWsArrow();
+    } catch (e) {
+      toast('Câmera indisponível: ' + e.message);
+      closeWindshield();
+    }
+  }
+
+  function closeWindshield() {
+    $('windshield').classList.remove('active');
+    if (wsStream) { wsStream.getTracks().forEach(t => t.stop()); wsStream = null; }
+    if (wsRainRaf)  { cancelAnimationFrame(wsRainRaf);  wsRainRaf = null; }
+    if (wsArrowRaf) { cancelAnimationFrame(wsArrowRaf); wsArrowRaf = null; }
+  }
+
+  attachButton($('windshieldBtn'), openWindshield);
+  attachButton($('wsExitBtn'), closeWindshield);
+
+  attachButton($('wsRainToggle'), () => {
+    wsRainOn = !wsRainOn;
+    $('wsRainIcon').textContent = wsRainOn ? '🌧️' : '☀️';
+    $('wsRainText').textContent = wsRainOn ? 'Chuva: ON' : 'Chuva: OFF';
+  });
+
+  /* ========== CHUVA NO PARA-BRISA ========== */
+  function initWsRain() {
+    if (wsRainRaf) cancelAnimationFrame(wsRainRaf);
+    const canvas = $('wsRainCanvas');
+    const ctx = setupCanvas(canvas);
+    const W = window.innerWidth, H = window.innerHeight;
+    const drops = [];
+    const COUNT = 140;
+    for (let i = 0; i < COUNT; i++) {
+      drops.push({
+        x: Math.random() * W, y: Math.random() * H,
+        r: 1 + Math.random() * 2.5,
+        speed: 15 + Math.random() * 30,
+        drift: -3 + Math.random() * 6,
+        op: 0.15 + Math.random() * 0.35,
+        cleared: 0
+      });
+    }
+    let last = 0, nextWiper = performance.now() + 5_000, wiperP = -1;
+
+    function draw(t) {
+      if (!$('windshield').classList.contains('active')) return;
+      const dt = last ? Math.min((t - last) / 1000, 0.04) : 0.016;
+      last = t;
+      ctx.clearRect(0, 0, W, H);
+
+      if (t >= nextWiper && wiperP < 0) wiperP = 0;
+      if (wiperP >= 0) {
+        wiperP += dt * 1.2;
+        if (wiperP >= 1) {
+          wiperP = -1;
+          nextWiper = t + 7_000;
+          drops.forEach(d => { if (d.y > H * 0.3) d.cleared = 1.5; });
+        } else {
+          const p = wiperP;
+          const x = W * 0.1 + W * 0.8 * p;
+          const y = H * 0.85 - Math.sin(p * Math.PI) * H * 0.35;
+          ctx.save();
+          ctx.lineCap = 'round';
+          ctx.shadowColor = '#8beaff';
+          ctx.shadowBlur = 12;
+          ctx.strokeStyle = 'rgba(180,230,255,0.85)';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(W * 0.5, H * 0.98);
+          ctx.quadraticCurveTo(W * 0.3, H * 0.92, x, y);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      if (wsRainOn) {
+        for (const d of drops) {
+          d.y += d.speed * dt;
+          d.x += d.drift * dt;
+          if (d.y > H + 5 || d.x < -5 || d.x > W + 5) {
+            d.x = Math.random() * W; d.y = -5; d.cleared = 0;
+          }
+          if (d.cleared > 0) d.cleared = Math.max(0, d.cleared - dt);
+          const a = d.op * (d.cleared > 0 ? 0.1 : 1);
+          ctx.beginPath();
+          ctx.ellipse(d.x, d.y, d.r * 0.7, d.r * 1.5, -0.2, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(200,230,255,${a})`;
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(d.x - d.r * 0.25, d.y - d.r * 0.4, d.r * 0.25, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255,255,255,${a * 0.9})`;
+          ctx.fill();
+        }
+      }
+      wsRainRaf = requestAnimationFrame(draw);
+    }
+    wsRainRaf = requestAnimationFrame(draw);
+  }
+
+  /* ========== SETA CENTRAL NO PARA-BRISA ========== */
+  function initWsArrow() {
+    if (wsArrowRaf) cancelAnimationFrame(wsArrowRaf);
+    const canvas = $('wsArrowCanvas');
+    const ctx = setupCanvas(canvas);
+    const W = window.innerWidth, H = window.innerHeight;
+    let pulse = 0;
+    function draw() {
+      if (!$('windshield').classList.contains('active')) return;
+      ctx.clearRect(0, 0, W, H);
+      pulse += 0.05;
+      const cx = W / 2;
+      const cy = H * 0.75;
+      const glow = 25 + Math.sin(pulse) * 8;
+
+      const grad = ctx.createLinearGradient(cx, cy - 100, cx, cy + 80);
+      grad.addColorStop(0, 'rgba(0,191,255,0)');
+      grad.addColorStop(0.4, 'rgba(66,220,255,0.4)');
+      grad.addColorStop(0.7, 'rgba(0,191,255,0.6)');
+      grad.addColorStop(1, 'rgba(0,191,255,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(cx - 15, cy - 100); ctx.lineTo(cx + 15, cy - 100);
+      ctx.lineTo(cx + 40, cy + 80);  ctx.lineTo(cx - 40, cy + 80);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.shadowColor = '#00bfff';
+      ctx.shadowBlur = glow;
+      ctx.fillStyle = '#42dcff';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 50);
+      ctx.lineTo(cx - 28, cy + 15); ctx.lineTo(cx - 12, cy + 8);
+      ctx.lineTo(cx - 12, cy + 40); ctx.lineTo(cx + 12, cy + 40);
+      ctx.lineTo(cx + 12, cy + 8);  ctx.lineTo(cx + 28, cy + 15);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.shadowBlur = 15;
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(cx, cy - 10, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      wsArrowRaf = requestAnimationFrame(draw);
+    }
+    wsArrowRaf = requestAnimationFrame(draw);
+  }
+
+  /* ========== VELOCIDADE (DEMO) ========== */
+  // ATENÇÃO: valores mockados só para demonstração visual.
+  // Troque por navigator.geolocation.watchPosition + pos.coords.speed
+  // para ter velocidade real.
+  let speed = 52;
+  setInterval(() => {
+    speed = Math.floor(Math.random() * 20) + 45;
+    $('mapSpeedVal').textContent = speed;
+    $('wsSpeedVal').textContent = speed;
+    const circ = 2 * Math.PI * 28;
+    const off = circ - (speed / 120) * circ;
+    $('mapSpeedoFill').style.strokeDashoffset = off;
+    $('wsSpeedoFill').style.strokeDashoffset = off;
+  }, 2000);
+
+  /* ========== ZOOM ========== */
+  attachButton($('zoomInBtn'),  () => map.zoomIn());
+  attachButton($('zoomOutBtn'), () => map.zoomOut());
+
+  /* ========== RESIZE / VISIBILITY ========== */
+  let resizeT;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(() => {
+      // reconfigura DPR
+      if (rainRaf) initMapRain();
+      if (arrowRaf) initRouteArrow();
+      if (wsRainRaf) initWsRain();
+      if (wsArrowRaf) initWsArrow();
+      map.invalidateSize();
+    }, 200);
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      if (routeCoords.length && !rainRaf) initMapRain();
+      if (routeCoords.length && !arrowRaf) initRouteArrow();
+      if ($('windshield').classList.contains('active') && !wsRainRaf) initWsRain();
+      if ($('windshield').classList.contains('active') && !wsArrowRaf) initWsArrow();
+    }
+  });
+})();
+</script>
+</body>
+</html>
