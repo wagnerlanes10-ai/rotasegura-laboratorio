@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#050d1a">
+<title>RotaSegura - Visão 3D + Para-brisa</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+  --neon: #00d2ff;
+  --neon-bright: #3a7bd5;
+  --bg-dark: #020b14;
+  --glass: rgba(10, 20, 35, 0.85);
+  --glass-border: rgba(0, 210, 255, 0.4);
+  --text: #ffffff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; background: var(--bg-dark); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+/* MAPA 3D PERSPECTIVA */
+#map { position: absolute; inset: 0; z-index: 1; background: var(--bg-dark); }
+.map-3d {
+  transform: perspective(1000px) rotateX(45deg) scale(1.4) translateY(10%);
+  transform-origin: 50% 70%;
+}
+/* Filtro escuro no mapa (truque para não precisar de API key) */
+.map-3d .leaflet-tile-pane, .map-day .leaflet-tile-pane {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%) sepia(20%) !important;
+}
+
+/* CANVAS DE CHUVA E SETA NO MAPA */
+#rainCanvas, #routeArrowCanvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none;
+}
+#rainCanvas { z-index: 450; }
+#routeArrowCanvas { z-index: 460; }
+
+/* GLASSMORPHISM */
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+/* TOP BAR */
+#topBar {
+  position: absolute; top: 20px; left: 15px; right: 15px;
+  z-index: 500; display: flex; justify-content: space-between; align-items: flex-start;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-icon {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, #00d2ff, #0055ff);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 15px rgba(0,210,255,0.6);
+}
+.brand-text { font-size: 20px; font-weight: 700; line-height: 1.1; letter-spacing: 0.5px; }
+.brand-sub { font-size: 11px; color: #9cb5d0; font-weight: 400; }
+.rain-badge {
+  padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 6px; color: var(--neon);
+}
+
+/* BARRA DE BUSCA */
+#searchPanel {
+  position: absolute; top: 80px; left: 15px; right: 15px;
+  z-index: 500; display: flex; gap: 10px;
+}
+#searchInput {
+  flex: 1; height: 50px;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: 12px; padding: 0 15px;
+  color: white; font-size: 16px; outline: none;
+  backdrop-filter: blur(15px); box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+#searchInput::placeholder { color: #9cb5d0; }
+#searchBtn {
+  width: 50px; height: 50px; border-radius: 12px;
+  background: linear-gradient(135deg, #00d2ff, #0055ff);
+  border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 15px rgba(0,210,255,0.6); color: white;
+}
+
+/* NAV CARD (ROTATÓRIA) */
+#navCard {
+  position: absolute; top: 80px; left: 15px; right: 15px;
+  z-index: 500; padding: 16px;
+  display: none; align-items: center; gap: 16px;
+}
+.nav-icon { width: 50px; height: 50px; flex-shrink: 0; }
+.nav-icon svg { width: 100%; height: 100%; fill: none; stroke: var(--neon); stroke-width: 6; filter: drop-shadow(0 0 8px rgba(0,210,255,0.8)); }
+.nav-text strong { display: block; font-size: 18px; line-height: 1.2; font-weight: 600; color: #fff; }
+.nav-text .dist { color: var(--neon); font-size: 18px; font-weight: 700; margin-top: 4px; text-shadow: 0 0 10px rgba(0,210,255,0.5);}
+
+/* BOTÕES LATERAIS */
+.side-controls {
+  position: absolute; top: 45%; transform: translateY(-50%);
+  z-index: 500; display: flex; flex-direction: column; gap: 12px;
+}
+.side-controls.left { left: 15px; }
+.side-controls.right { right: 15px; }
+.side-btn {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: 0.2s;
+}
+.side-btn:active { transform: scale(0.9); }
+.side-btn svg { width: 22px; height: 22px; fill: none; stroke: var(--neon); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(0,210,255,0.6)); }
+
+/* HUD INFERIOR */
+#bottomHUD {
+  position: absolute; bottom: 20px; left: 15px; right: 15px;
+  z-index: 500; padding: 16px 10px;
+  display: none; justify-content: space-around; align-items: center;
+}
+#bottomHUD.show { display: flex; }
+.hud-item { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; position: relative; }
+.hud-item:not(:last-child)::after {
+  content: ''; position: absolute; right: 0; top: 10%; bottom: 10%;
+  width: 1px; background: linear-gradient(to bottom, transparent, rgba(0,210,255,0.3), transparent);
+}
+.hud-icon svg { width: 24px; height: 24px; fill: none; stroke: #9cb5d0; stroke-width: 2; margin-bottom: 4px;}
+.hud-val { font-size: 20px; font-weight: 700; color: #fff; line-height: 1; }
+.hud-label { font-size: 11px; color: #9cb5d0; margin-top: 4px; }
+.hud-val.text-neon { color: var(--neon); text-shadow: 0 0 10px rgba(0,210,255,0.5); }
+
+#statusText {
+  position: absolute; top: 140px; left: 50%; transform: translateX(-50%);
+  z-index: 500; font-size: 13px; color: var(--neon);
+  background: rgba(0,0,0,0.7); padding: 6px 12px; border-radius: 20px;
+  display: none; white-space: nowrap;
+}
+
+/* ========================================= */
+/* ===== MODO PARA-BRISA (CAMERA + CHUVA) === */
+/* ========================================= */
+#windshield {
+  position: fixed; inset: 0; z-index: 2000;
+  display: none; overflow: hidden; background: #000;
+}
+#windshield.active { display: block; }
+#cameraFeed { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+#wsRainCanvas, #wsArrowCanvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
+}
+#wsRainCanvas { z-index: 2; }
+#wsArrowCanvas { z-index: 3; }
+
+.ws-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 30%, transparent 60%, rgba(0,0,0,0.8) 100%);
+  z-index: 4; pointer-events: none;
+}
+
+#wsNavCard {
+  position: absolute; top: 85px; left: 15px; right: 15px;
+  z-index: 10; padding: 16px;
+  display: flex; align-items: center; gap: 16px;
+}
+#wsBottomHUD {
+  position: absolute; bottom: 20px; left: 15px; right: 15px;
+  z-index: 10; padding: 16px 10px;
+  display: flex; justify-content: space-around; align-items: center;
+}
+#wsExitBtn {
+  position: absolute; top: 20px; right: 15px;
+  z-index: 10; padding: 8px 16px;
+  border-radius: 20px; font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  color: white; border: 1px solid rgba(255, 82, 82, 0.5);
+  background: rgba(255, 82, 82, 0.2);
+}
+#wsRainToggle {
+  position: absolute; top: 85px; right: 15px;
+  z-index: 10; padding: 8px 14px;
+  font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  color: var(--neon);
+}
+</style>
+</head>
+<body>
+
+<!-- MAPA PRINCIPAL -->
+<div id="map" class="map-3d"></div>
+<canvas id="rainCanvas"></canvas>
+<canvas id="routeArrowCanvas"></canvas>
+
+<!-- TOPO -->
+<div id="topBar">
+  <div class="brand">
+    <div class="brand-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 16.5v-9l6 4.5-6 4.5z"/></svg>
+    </div>
+    <div>
+      <div class="brand-text">RotaSegura</div>
+      <div class="brand-sub">Seu destino mais seguro</div>
+    </div>
+  </div>
+  <div class="rain-badge glass"><span>🌧️</span> Chuva: ON</div>
+</div>
+
+<!-- BARRA DE BUSCA -->
+<div id="searchPanel">
+  <input id="searchInput" placeholder="Para onde? Ex: Centro, RJ" autocomplete="off">
+  <button id="searchBtn" aria-label="Buscar">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+  </button>
+</div>
+
+<div id="statusText">📍 Buscando sua localização...</div>
+
+<!-- CARD NAVEGAÇÃO -->
+<div id="navCard" class="glass">
+  <div class="nav-icon">
+    <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 4a6 6 0 0 0-6 6c0 2.5 1.5 4 3 5v4" /><path d="M12 4a6 6 0 0 1 6 6c0 2.5-1.5 4-3 5v4" /><path d="M12 19l-3-3m3 3l3-3" />
+    </svg>
+  </div>
+  <div class="nav-text">
+    <strong>Na rotatória,<br>pegue a 2ª saída</strong>
+    <div class="dist" id="navDist">300 m</div>
+  </div>
+</div>
+
+<!-- CONTROLES ESQUERDA -->
+<div class="side-controls left">
+  <div class="side-btn glass">
+    <svg viewBox="0 0 24 24"><path d="M12 2L4.5 20.3l.7.7L12 18l6.8 3 .7-.7z" fill="var(--neon)"/></svg>
+  </div>
+  <div class="side-btn glass">
+    <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
+  </div>
+</div>
+
+<!-- CONTROLES DIREITA -->
+<div class="side-controls right">
+  <div class="side-btn glass" id="locateBtn">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>
+  </div>
+  
+  <!-- BOTÃO DO PARA-BRISA -->
+  <div class="side-btn glass" id="windshieldBtn" style="display:none; border-color: #ff5252; box-shadow: 0 0 15px rgba(255,82,82,0.4);">
+    <svg viewBox="0 0 24 24" stroke="#ff5252"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg>
+  </div>
+
+  <div class="side-btn glass" id="zoomInBtn">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+  </div>
+  <div class="side-btn glass" id="zoomOutBtn">
+    <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+  </div>
+</div>
+
+<!-- HUD INFERIOR MAPA -->
+<div id="bottomHUD" class="glass">
+  <div class="hud-item">
+    <div class="hud-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12l4-4m-4 4l-4 2"/></svg></div>
+    <div class="hud-val" id="speedVal">0</div>
+    <div class="hud-label">km/h</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-icon"><svg viewBox="0 0 24 24" stroke="var(--neon)"><path d="M12 4a6 6 0 0 0-6 6c0 2.5 1.5 4 3 5v4"/><path d="M12 4a6 6 0 0 1 6 6c0 2.5-1.5 4-3 5v4"/></svg></div>
+    <div class="hud-val text-neon" id="hudDist">--</div>
+    <div class="hud-label">Rotatória</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+    <div class="hud-val" id="hudTime">-- min</div>
+    <div class="hud-label" id="hudKm">-- km</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-icon"><svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/></svg></div>
+    <div class="hud-val" id="hudArrival">--:--</div>
+    <div class="hud-label">Chegada</div>
+  </div>
+</div>
+
+<!-- ======================= -->
+<!-- MODO PARA-BRISA (OVERLAY) -->
+<!-- ======================= -->
+<div id="windshield">
+  <video id="cameraFeed" autoplay playsinline muted></video>
+  <canvas id="wsRainCanvas"></canvas>
+  <canvas id="wsArrowCanvas"></canvas>
+  <div class="ws-overlay"></div>
+
+  <div id="wsExitBtn">✖ Sair</div>
+
+  <div id="wsRainToggle" class="glass">
+    <span id="wsRainIcon">🌧️</span><span id="wsRainText">Chuva: ON</span>
+  </div>
+
+  <div id="wsNavCard" class="glass">
+    <div class="nav-icon">
+      <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 4a6 6 0 0 0-6 6c0 2.5 1.5 4 3 5v4" /><path d="M12 4a6 6 0 0 1 6 6c0 2.5-1.5 4-3 5v4" /><path d="M12 19l-3-3m3 3l3-3" />
+      </svg>
+    </div>
+    <div class="nav-text">
+      <strong>Na rotatória,<br>pegue a 2ª saída</strong>
+      <div class="dist">300 m</div>
+    </div>
+  </div>
+
+  <div id="wsBottomHUD" class="glass">
+    <div class="hud-item">
+      <div class="hud-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12l4-4m-4 4l-4 2"/></svg></div>
+      <div class="hud-val" id="wsSpeedVal">52</div>
+      <div class="hud-label">km/h</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-icon"><svg viewBox="0 0 24 24" stroke="var(--neon)"><path d="M12 4a6 6 0 0 0-6 6c0 2.5 1.5 4 3 5v4"/><path d="M12 4a6 6 0 0 1 6 6c0 2.5-1.5 4-3 5v4"/></svg></div>
+      <div class="hud-val text-neon">300 m</div>
+      <div class="hud-label">Rotatória</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+      <div class="hud-val" id="wsTime">12 min</div>
+      <div class="hud-label" id="wsKm">8,4 km</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-icon"><svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/></svg></div>
+      <div class="hud-val" id="wsArrival">14:44</div>
+      <div class="hud-label">Chegada</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([-22.9068, -43.1729], 15);
+
+// 1. MAPA BASE (O CSS inverte as cores para ficar escuro)
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+let userPos = null;
+let routeCoords = [];
+let userMarker = null;
+
+const carIcon = L.divIcon({
+  className: '',
+  html: `<div style="width:24px;height:24px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 15px rgba(255,255,255,0.8);">
+           <div style="width:16px;height:16px;background:#00d2ff;border-radius:50%;"></div>
+         </div>`,
+  iconSize: [24, 24], iconAnchor: [12, 12]
+});
+
+// 2. GPS
+function locate() {
+  $('statusText').style.display = 'block';
+  $('statusText').textContent = '📍 Buscando sua localização...';
+  
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      userPos = [pos.coords.latitude, pos.coords.longitude];
+      if (userMarker) map.removeLayer(userMarker);
+      userMarker = L.marker(userPos, { icon: carIcon }).addTo(map);
+      map.setView(userPos, 16);
+      $('statusText').style.display = 'none';
+    },
+    () => {
+      $('statusText').textContent = '⚠️ GPS negado. Usando localização padrão (RJ).';
+      userPos = [-22.9068, -43.1729];
+      userMarker = L.marker(userPos, { icon: carIcon }).addTo(map);
+      setTimeout(() => $('statusText').style.display = 'none', 3000);
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+$('locateBtn').addEventListener('click', locate);
+locate();
+
+// 3. BUSCAR ROTA
+$('searchBtn').addEventListener('click', async () => {
+  const q = $('searchInput').value.trim();
+  if (!q) return alert('Digite um destino!');
+  if (!userPos) return alert('Aguardando GPS...');
+
+  const btn = $('searchBtn');
+  btn.innerHTML = '...';
+  $('statusText').style.display = 'block';
+  $('statusText').textContent = '🔎 Buscando destino...';
+
+  try {
+    const geo = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(q)}`);
+    const gd = await geo.json();
+    if (!gd.length) throw new Error('Destino não encontrado');
+
+    const dest = { lat: parseFloat(gd[0].lat), lon: parseFloat(gd[0].lon) };
+    $('statusText').textContent = '🛣️ Calculando rota...';
+
+    const rt = await fetch(`https://router.project-osrm.org/route/v1/driving/${userPos[1]},${userPos[0]};${dest.lon},${dest.lat}?overview=full&geometries=geojson`);
+    const rd = await rt.json();
+    if (rd.code !== 'Ok') throw new Error('Rota não encontrada');
+
+    // Limpa rotas antigas
+    map.eachLayer(layer => { if (layer instanceof L.Polyline) map.removeLayer(layer); });
+    routeCoords = rd.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+
+    // Desenha o Glow neon
+    L.polyline(routeCoords, { color: '#00d2ff', weight: 25, opacity: 0.2, lineCap: 'round' }).addTo(map);
+    L.polyline(routeCoords, { color: '#00d2ff', weight: 12, opacity: 0.6, lineCap: 'round' }).addTo(map);
+    L.polyline(routeCoords, { color: '#ffffff', weight: 4, opacity: 1, lineCap: 'round', dashArray: '10, 15' }).addTo(map);
+
+    // Atualiza HUDs
+    const dur = Math.round(rd.routes[0].duration / 60);
+    const dist = (rd.routes[0].distance / 1000).toFixed(1).replace('.', ',');
+    const arr = new Date(Date.now() + rd.routes[0].duration * 1000).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+
+    $('hudTime').textContent = dur + ' min'; $('wsTime').textContent = dur + ' min';
+    $('hudKm').textContent = dist + ' km'; $('wsKm').textContent = dist + ' km';
+    $('hudArrival').textContent = arr; $('wsArrival').textContent = arr;
+    
+    $('searchPanel').style.display = 'none';
+    $('navCard').style.display = 'flex';
+    $('bottomHUD').classList.add('show');
+    $('statusText').style.display = 'none';
+    
+    // MOSTRA O BOTÃO DO PARA-BRISA
+    $('windshieldBtn').style.display = 'flex';
+
+    map.fitBounds(L.latLngBounds(routeCoords), { padding: [50, 50] });
+    drawMapArrow();
+
+  } catch (e) {
+    alert(e.message);
+    $('statusText').style.display = 'none';
+  } finally {
+    btn.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`;
+  }
+});
+
+$('searchInput').addEventListener('keypress', e => { if(e.key === 'Enter') $('searchBtn').click(); });
+$('zoomInBtn').addEventListener('click', () => map.zoomIn());
+$('zoomOutBtn').addEventListener('click', () => map.zoomOut());
+
+// 4. SETA GIGANTE NO MAPA
+const mapArrowCanvas = $('routeArrowCanvas');
+const mCtx = mapArrowCanvas.getContext('2d');
+
+function drawMapArrow() {
+  if (routeCoords.length < 2) return;
+  const dpr = window.devicePixelRatio || 1;
+  mapArrowCanvas.width = window.innerWidth * dpr;
+  mapArrowCanvas.height = window.innerHeight * dpr;
+  mCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+  const midIdx = Math.floor(routeCoords.length / 2);
+  const pt = routeCoords[midIdx];
+  const ptNext = routeCoords[midIdx + 1] || pt;
+  
+  const px = map.latLngToContainerPoint(pt);
+  const pxNext = map.latLngToContainerPoint(ptNext);
+  const angle = Math.atan2(pxNext.y - px.y, pxNext.x - px.x) - (Math.PI / 2);
+
+  mCtx.save();
+  mCtx.translate(px.x, px.y);
+  mCtx.rotate(angle);
+  mCtx.shadowColor = '#00d2ff';
+  mCtx.shadowBlur = 30;
+  mCtx.fillStyle = '#00d2ff';
+  
+  mCtx.beginPath();
+  mCtx.moveTo(0, -60); mCtx.lineTo(-30, 20); mCtx.lineTo(-10, 20);
+  mCtx.lineTo(-10, 50); mCtx.lineTo(10, 50); mCtx.lineTo(10, 20);
+  mCtx.lineTo(30, 20); mCtx.closePath(); mCtx.fill();
+
+  mCtx.shadowBlur = 10;
+  mCtx.strokeStyle = 'rgba(255,255,255,0.9)';
+  mCtx.lineWidth = 3; mCtx.stroke();
+  mCtx.restore();
+}
+map.on('move', drawMapArrow);
+map.on('zoom', drawMapArrow);
+
+// 5. CHUVA NO MAPA
+const mapRainCanvas = $('rainCanvas');
+const rCtx = mapRainCanvas.getContext('2d');
+let mapDrops = [];
+function initMapRain() {
+  mapRainCanvas.width = window.innerWidth; mapRainCanvas.height = window.innerHeight;
+  mapDrops = Array.from({length: 80}, () => ({
+    x: Math.random() * mapRainCanvas.width, y: Math.random() * mapRainCanvas.height,
+    r: Math.random() * 3 + 1, speed: Math.random() * 1 + 0.5, op: Math.random() * 0.4 + 0.1
+  }));
+}
+function drawMapRain() {
+  rCtx.clearRect(0, 0, mapRainCanvas.width, mapRainCanvas.height);
+  mapDrops.forEach(d => {
+    rCtx.beginPath(); rCtx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    rCtx.fillStyle = `rgba(180, 220, 255, ${d.op})`; rCtx.fill();
+    d.y += d.speed;
+    if (d.y > mapRainCanvas.height) { d.y = -10; d.x = Math.random() * mapRainCanvas.width; }
+  });
+  requestAnimationFrame(drawMapRain);
+}
+initMapRain(); drawMapRain();
+
+// ==========================================
+// 6. MODO PARA-BRISA (CÂMERA E ANIMAÇÕES)
+// ==========================================
+let wsStream = null;
+let wsRainOn = true;
+let wsRainRaf = null, wsArrowRaf = null;
+
+$('windshieldBtn').addEventListener('click', async () => {
+  $('windshield').classList.add('active');
+  try {
+    wsStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    $('cameraFeed').srcObject = wsStream;
+    initWsRain(); initWsArrow();
+  } catch (e) {
+    alert('Câmera indisponível: ' + e.message);
+    closeWindshield();
+  }
+});
+
+$('wsExitBtn').addEventListener('click', closeWindshield);
+
+function closeWindshield() {
+  $('windshield').classList.remove('active');
+  if (wsStream) { wsStream.getTracks().forEach(t => t.stop()); wsStream = null; }
+  if (wsRainRaf) { cancelAnimationFrame(wsRainRaf); wsRainRaf = null; }
+  if (wsArrowRaf) { cancelAnimationFrame(wsArrowRaf); wsArrowRaf = null; }
+}
+
+$('wsRainToggle').addEventListener('click', () => {
+  wsRainOn = !wsRainOn;
+  $('wsRainIcon').textContent = wsRainOn ? '🌧️' : '☀️';
+  $('wsRainText').textContent = wsRainOn ? 'Chuva: ON' : 'Chuva: OFF';
+});
+
+function initWsRain() {
+  if (wsRainRaf) cancelAnimationFrame(wsRainRaf);
+  const canvas = $('wsRainCanvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = window.innerWidth * dpr; canvas.height = window.innerHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  
+  const W = window.innerWidth, H = window.innerHeight;
+  const drops = Array.from({length: 150}, () => ({
+    x: Math.random() * W, y: Math.random() * H, r: 1 + Math.random() * 2.5,
+    speed: 15 + Math.random() * 30, drift: -3 + Math.random() * 6, op: 0.15 + Math.random() * 0.35
+  }));
+
+  let last = 0;
+  function draw(t) {
+    if (!$('windshield').classList.contains('active')) return;
+    const dt = last ? Math.min((t - last) / 1000, 0.04) : 0.016; last = t;
+    ctx.clearRect(0, 0, W, H);
+
+    if (wsRainOn) {
+      drops.forEach(d => {
+        d.y += d.speed * dt; d.x += d.drift * dt;
+        if (d.y > H + 5 || d.x < -5 || d.x > W + 5) { d.x = Math.random() * W; d.y = -5; }
+        ctx.beginPath(); ctx.ellipse(d.x, d.y, d.r * 0.7, d.r * 1.5, -0.2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(200,230,255,${d.op})`; ctx.fill();
+        ctx.beginPath(); ctx.arc(d.x - d.r * 0.25, d.y - d.r * 0.4, d.r * 0.25, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${d.op * 0.9})`; ctx.fill();
+      });
+    }
+    wsRainRaf = requestAnimationFrame(draw);
+  }
+  wsRainRaf = requestAnimationFrame(draw);
+}
+
+function initWsArrow() {
+  if (wsArrowRaf) cancelAnimationFrame(wsArrowRaf);
+  const canvas = $('wsArrowCanvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = window.innerWidth * dpr; canvas.height = window.innerHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  
+  const W = window.innerWidth, H = window.innerHeight;
+  let pulse = 0;
+
+  function draw() {
+    if (!$('windshield').classList.contains('active')) return;
+    ctx.clearRect(0, 0, W, H);
+    pulse += 0.05;
+    const cx = W / 2; const cy = H * 0.75;
+    const glow = 25 + Math.sin(pulse) * 8;
+
+    const grad = ctx.createLinearGradient(cx, cy - 100, cx, cy + 80);
+    grad.addColorStop(0, 'rgba(0,210,255,0)'); grad.addColorStop(0.4, 'rgba(0,210,255,0.4)');
+    grad.addColorStop(0.7, 'rgba(0,210,255,0.6)'); grad.addColorStop(1, 'rgba(0,210,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.moveTo(cx - 15, cy - 100); ctx.lineTo(cx + 15, cy - 100);
+    ctx.lineTo(cx + 40, cy + 80); ctx.lineTo(cx - 40, cy + 80); ctx.closePath(); ctx.fill();
+
+    ctx.shadowColor = '#00d2ff'; ctx.shadowBlur = glow; ctx.fillStyle = '#00d2ff';
+    ctx.beginPath(); ctx.moveTo(cx, cy - 50); ctx.lineTo(cx - 28, cy + 15); ctx.lineTo(cx - 12, cy + 8);
+    ctx.lineTo(cx - 12, cy + 40); ctx.lineTo(cx + 12, cy + 40); ctx.lineTo(cx + 12, cy + 8);
+    ctx.lineTo(cx + 28, cy + 15); ctx.closePath(); ctx.fill();
+
+    ctx.shadowBlur = 15; ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 2.5; ctx.stroke();
+    wsArrowRaf = requestAnimationFrame(draw);
+  }
+  wsArrowRaf = requestAnimationFrame(draw);
+}
+
+window.addEventListener('resize', () => {
+  initMapRain(); drawMapArrow();
+  if ($('windshield').classList.contains('active')) { initWsRain(); initWsArrow(); }
+});
+</script>
+</body>
+</html>
