@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#050d1a">
+<title>RotaSegura - Visão 3D</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+  --neon: #00d2ff;
+  --neon-bright: #3a7bd5;
+  --bg-dark: #020b14;
+  --glass: rgba(10, 20, 35, 0.85);
+  --glass-border: rgba(0, 210, 255, 0.4);
+  --text: #ffffff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; background: var(--bg-dark); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+/* MAPA 3D PERSPECTIVA */
+#map { position: absolute; inset: 0; z-index: 1; background: var(--bg-dark); }
+.map-3d {
+  transform: perspective(1000px) rotateX(45deg) scale(1.4) translateY(10%);
+  transform-origin: 50% 70%;
+}
+
+/* TRUQUE PARA DEIXAR O MAPA PADRÃO ESCURO SEM PRECISAR DE API KEY */
+.map-3d .leaflet-tile-pane, .map-day .leaflet-tile-pane {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%) sepia(20%) !important;
+}
+
+/* CANVAS DE CHUVA (EFEITO VIDRO) */
+#rainCanvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  z-index: 450; pointer-events: none;
+}
+
+/* GLASSMORPHISM */
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+/* TOP BAR */
+#topBar {
+  position: absolute; top: 20px; left: 15px; right: 15px;
+  z-index: 500; display: flex; justify-content: space-between; align-items: flex-start;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-icon {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, #00d2ff, #0055ff);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 15px rgba(0,210,255,0.6);
+}
+.brand-text { font-size: 20px; font-weight: 700; line-height: 1.1; letter-spacing: 0.5px; }
+.brand-sub { font-size: 11px; color: #9cb5d0; font-weight: 400; }
+.rain-badge {
+  padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 6px; color: var(--neon);
+}
+
+/* BARRA DE BUSCA */
+#searchPanel {
+  position: absolute; top: 80px; left: 15px; right: 15px;
+  z-index: 500; display: flex; gap: 10px;
+}
+#searchInput {
+  flex: 1; height: 50px;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: 12px; padding: 0 15px;
+  color: white; font-size: 16px; outline: none;
+  backdrop-filter: blur(15px); box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+#searchInput::placeholder { color: #9cb5d0; }
+#searchBtn {
+  width: 50px; height: 50px; border-radius: 12px;
+  background: linear-gradient(135deg, #00d2ff, #0055ff);
+  border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 15px rgba(0,210,255,0.6); color: white;
+}
+
+/* NAV CARD (ROTATÓRIA) */
+#navCard {
+  position: absolute; top: 80px; left: 15px; right: 15px;
+  z-index: 500; padding: 16px;
+  display: none; align-items: center; gap: 16px;
+}
+.nav-icon { width: 50px; height: 50px; flex-shrink: 0; }
+.nav-icon svg { width: 100%; height: 100%; fill: none; stroke: var(--neon); stroke-width: 6; filter: drop-shadow(0 0 8px rgba(0,210,255,0.8)); }
+.nav-text strong { display: block; font-size: 18px; line-height: 1.2; font-weight: 600; color: #fff; }
+.nav-text .dist { color: var(--neon); font-size: 18px; font-weight: 700; margin-top: 4px; text-shadow: 0 0 10px rgba(0,210,255,0.5);}
+
+/* BOTÕES LATERAIS */
+.side-controls {
+  position: absolute; top: 45%; transform: translateY(-50%);
+  z-index: 500; display: flex; flex-direction: column; gap: 12px;
+}
+.side-controls.left { left: 15px; }
+.side-controls.right { right: 15px; }
+.side-btn {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: 0.2s;
+}
+.side-btn:active { transform: scale(0.9); }
+.side-btn svg { width: 22px; height: 22px; fill: none; stroke: var(--neon); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(0,210,255,0.6)); }
+
+/* HUD INFERIOR */
+#bottomHUD {
+  position: absolute; bottom: 20px; left: 15px; right: 15px;
+  z-index: 500; padding: 16px 10px;
+  display: none; justify-content: space-around; align-items: center;
+}
+#bottomHUD.show { display: flex; }
+.hud-item { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; position: relative; }
+.hud-item:not(:last-child)::after {
+  content: ''; position: absolute; right: 0; top: 10%; bottom: 10%;
+  width: 1px; background: linear-gradient(to bottom, transparent, rgba(0,210,255,0.3), transparent);
+}
+.hud-icon svg { width: 24px; height: 24px; fill: none; stroke: #9cb5d0; stroke-width: 2; margin-bottom: 4px;}
+.hud-val { font-size: 20px; font-weight: 700; color: #fff; line-height: 1; }
+.hud-label { font-size: 11px; color: #9cb5d0; margin-top: 4px; }
+.hud-val.text-neon { color: var(--neon); text-shadow: 0 0 10px rgba(0,210,255,0.5); }
+
+#statusText {
+  position: absolute; top: 140px; left: 50%; transform: translateX(-50%);
+  z-index: 500; font-size: 13px; color: var(--neon);
+  background: rgba(0,0,0,0.7); padding: 6px 12px; border-radius: 20px;
+  display: none; white-space: nowrap;
+}
+</style>
+</head>
+<body>
+
+<div id="map" class="map-3d"></div>
+<canvas id="rainCanvas"></canvas>
+
+<!-- TOPO -->
+<div id="topBar">
+  <div class="brand">
+    <div class="brand-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 16.5v-9l6 4.5-6 4.5z"/></svg>
+    </div>
+    <div>
+      <div class="brand-text">RotaSegura</div>
+      <div class="brand-sub">Seu destino mais seguro</div>
+    </div>
+  </div>
+  <div class="rain-badge glass">
+    <span>🌧️</span> Chuva: ON
+  </div>
+</div>
+
+<!-- BARRA DE BUSCA -->
+<div id="searchPanel">
+  <input id="searchInput" placeholder="Para onde? Ex: Centro, RJ" autocomplete="off">
+  <button id="searchBtn" aria-label="Buscar">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+  </button>
+</div>
+
+<div id="statusText">📍 Buscando sua localização...</div>
+
+<!-- CARD NAVEGAÇÃO -->
+<div id="navCard" class="glass">
+  <div class="nav-icon">
+    <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 4a6 6 0 0 0-6 6c0 2.5 1.5 4 3 5v4" />
+      <path d="M12 4a6 6 0 0 1 6 6c0 2.5-1.5 4-3 5v4" />
+      <path d="M12 19l-3-3m3 3l3-3" />
+    </svg>
+  </div>
+  <div class="nav-text">
+    <strong>Na rotatória,<br>pegue a 2ª saída</strong>
+    <div class="dist" id="navDist">300 m</div>
+  </div>
+</div>
+
+<!-- CONTROLES ESQUERDA -->
+<div class="side-controls left">
+  <div class="side-btn glass">
+    <svg viewBox="0 0 24 24"><path d="M12 2L4.5 20.3l.7.7L12 18l6.8 3 .7-.7z" fill="var(--neon)"/></svg>
+  </div>
+  <div class="side-btn glass">
+    <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
+  </div>
+</div>
+
+<!-- CONTROLES DIREITA -->
+<div class="side-controls right">
+  <div class="side-btn glass" id="locateBtn">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>
+  </div>
+  <div class="side-btn glass" id="zoomInBtn">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+  </div>
+  <div class="side-btn glass" id="zoomOutBtn">
+    <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+  </div>
+</div>
+
+<!-- HUD INFERIOR -->
+<div id="bottomHUD" class="glass">
+  <div class="hud-item">
+    <div class="hud-icon">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12l4-4m-4 4l-4 2"/></svg>
+    </div>
+    <div class="hud-val" id="speedVal">0</div>
+    <div class="hud-label">km/h</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-icon">
+      <svg viewBox="0 0 24 24" stroke="var(--neon)"><path d="M12 4a6 6 0 0 0-6 6c0 2.5 1.5 4 3 5v4"/><path d="M12 4a6 6 0 0 1 6 6c0 2.5-1.5 4-3 5v4"/></svg>
+    </div>
+    <div class="hud-val text-neon" id="hudDist">--</div>
+    <div class="hud-label">Rotatória</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-icon">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    </div>
+    <div class="hud-val" id="hudTime">-- min</div>
+    <div class="hud-label" id="hudKm">-- km</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-icon">
+      <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/></svg>
+    </div>
+    <div class="hud-val" id="hudArrival">--:--</div>
+    <div class="hud-label">Chegada</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([-22.9068, -43.1729], 15);
+
+// Mapa Padrão (o CSS aplica o filtro escuro)
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+let userPos = null;
+let routeCoords = [];
+let userMarker = null;
+
+const carIcon = L.divIcon({
+  className: '',
+  html: `<div style="width:24px;height:24px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 15px rgba(255,255,255,0.8);">
+           <div style="width:16px;height:16px;background:#00d2ff;border-radius:50%;"></div>
+         </div>`,
+  iconSize: [24, 24], iconAnchor: [12, 12]
+});
+
+// 1. PEGAR LOCALIZAÇÃO
+function locate() {
+  $('statusText').style.display = 'block';
+  $('statusText').textContent = '📍 Buscando sua localização...';
+  
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      userPos = [pos.coords.latitude, pos.coords.longitude];
+      if (userMarker) map.removeLayer(userMarker);
+      userMarker = L.marker(userPos, { icon: carIcon }).addTo(map);
+      map.setView(userPos, 16);
+      $('statusText').style.display = 'none';
+    },
+    () => {
+      $('statusText').textContent = '⚠️ GPS negado. Usando localização padrão (RJ).';
+      userPos = [-22.9068, -43.1729]; // Fallback
+      userMarker = L.marker(userPos, { icon: carIcon }).addTo(map);
+      setTimeout(() => $('statusText').style.display = 'none', 3000);
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+$('locateBtn').addEventListener('click', locate);
+locate(); // Chama ao abrir
+
+// 2. CALCULAR ROTA
+$('searchBtn').addEventListener('click', async () => {
+  const q = $('searchInput').value.trim();
+  if (!q) return alert('Digite um destino!');
+  if (!userPos) return alert('Aguardando GPS...');
+
+  const btn = $('searchBtn');
+  btn.innerHTML = '...';
+  $('statusText').style.display = 'block';
+  $('statusText').textContent = '🔎 Buscando destino...';
+
+  try {
+    // Geocoding (Nome -> Coordenadas)
+    const geo = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(q)}`);
+    const gd = await geo.json();
+    if (!gd.length) throw new Error('Destino não encontrado');
+
+    const dest = { lat: parseFloat(gd[0].lat), lon: parseFloat(gd[0].lon) };
+    $('statusText').textContent = '🛣️ Calculando rota...';
+
+    // OSRM (Rota)
+    const rt = await fetch(`https://router.project-osrm.org/route/v1/driving/${userPos[1]},${userPos[0]};${dest.lon},${dest.lat}?overview=full&geometries=geojson`);
+    const rd = await rt.json();
+    if (rd.code !== 'Ok') throw new Error('Rota não encontrada');
+
+    // Limpa rotas antigas
+    map.eachLayer(layer => { if (layer instanceof L.Polyline) map.removeLayer(layer); });
+    
+    routeCoords = rd.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+
+    // Desenha a rota Neon (3 camadas para dar o Glow)
+    L.polyline(routeCoords, { color: '#00d2ff', weight: 25, opacity: 0.2, lineCap: 'round' }).addTo(map);
+    L.polyline(routeCoords, { color: '#00d2ff', weight: 12, opacity: 0.6, lineCap: 'round' }).addTo(map);
+    L.polyline(routeCoords, { color: '#ffffff', weight: 4, opacity: 1, lineCap: 'round', dashArray: '10, 15' }).addTo(map);
+
+    // Atualiza UI
+    const dur = Math.round(rd.routes[0].duration / 60);
+    const dist = (rd.routes[0].distance / 1000).toFixed(1).replace('.', ',');
+    const arr = new Date(Date.now() + rd.routes[0].duration * 1000).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+
+    $('hudTime').textContent = dur + ' min';
+    $('hudKm').textContent = dist + ' km';
+    $('hudArrival').textContent = arr;
+    $('hudDist').textContent = '300 m';
+    $('navDist').textContent = '300 m';
+    
+    // Esconde busca, mostra navegação
+    $('searchPanel').style.display = 'none';
+    $('navCard').style.display = 'flex';
+    $('bottomHUD').classList.add('show');
+    $('statusText').style.display = 'none';
+
+    map.fitBounds(L.latLngBounds(routeCoords), { padding: [50, 50] });
+    
+    // Desenha a seta
+    drawArrow();
+
+  } catch (e) {
+    alert(e.message);
+    $('statusText').style.display = 'none';
+  } finally {
+    btn.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`;
+  }
+});
+
+$('searchInput').addEventListener('keypress', e => { if(e.key === 'Enter') $('searchBtn').click(); });
+
+// 3. CONTROLES
+$('zoomInBtn').addEventListener('click', () => map.zoomIn());
+$('zoomOutBtn').addEventListener('click', () => map.zoomOut());
+
+// 4. SETA GIGANTE NO MAPA
+const arrowCanvas = document.createElement('canvas');
+arrowCanvas.id = 'routeArrowCanvas';
+arrowCanvas.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; z-index:460; pointer-events:none;';
+$('map').appendChild(arrowCanvas);
+const ctx = arrowCanvas.getContext('2d');
+
+function drawArrow() {
+  if (routeCoords.length < 2) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  arrowCanvas.width = window.innerWidth * dpr;
+  arrowCanvas.height = window.innerHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+  // Pega o meio da rota para desenhar a seta
+  const midIdx = Math.floor(routeCoords.length / 2);
+  const pt = routeCoords[midIdx];
+  const ptNext = routeCoords[midIdx + 1] || pt;
+  
+  const px = map.latLngToContainerPoint(pt);
+  const pxNext = map.latLngToContainerPoint(ptNext);
+  const angle = Math.atan2(pxNext.y - px.y, pxNext.x - px.x) - (Math.PI / 2);
+
+  ctx.save();
+  ctx.translate(px.x, px.y);
+  ctx.rotate(angle);
+
+  ctx.shadowColor = '#00d2ff';
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = '#00d2ff';
+  
+  ctx.beginPath();
+  ctx.moveTo(0, -60);
+  ctx.lineTo(-30, 20);
+  ctx.lineTo(-10, 20);
+  ctx.lineTo(-10, 50);
+  ctx.lineTo(10, 50);
+  ctx.lineTo(10, 20);
+  ctx.lineTo(30, 20);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowBlur = 10;
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.restore();
+}
+
+map.on('move', drawArrow);
+map.on('zoom', drawArrow);
+window.addEventListener('resize', () => { initRain(); drawArrow(); });
+
+// 5. EFEITO DE CHUVA (GOTAS)
+const rainCanvas = $('rainCanvas');
+const rCtx = rainCanvas.getContext('2d');
+let drops = [];
+
+function initRain() {
+  rainCanvas.width = window.innerWidth;
+  rainCanvas.height = window.innerHeight;
+  drops = [];
+  for (let i = 0; i < 80; i++) {
+    drops.push({
+      x: Math.random() * rainCanvas.width,
+      y: Math.random() * rainCanvas.height,
+      r: Math.random() * 3 + 1,
+      speed: Math.random() * 1 + 0.5,
+      opacity: Math.random() * 0.4 + 0.1
+    });
+  }
+}
+
+function drawRain() {
+  rCtx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
+  drops.forEach(d => {
+    rCtx.beginPath();
+    rCtx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    rCtx.fillStyle = `rgba(180, 220, 255, ${d.opacity})`;
+    rCtx.fill();
+    d.y += d.speed;
+    if (d.y > rainCanvas.height) { d.y = -10; d.x = Math.random() * rainCanvas.width; }
+  });
+  requestAnimationFrame(drawRain);
+}
+initRain();
+drawRain();
+
+// 6. VELOCIDADE MOCKADA
+setInterval(() => {
+  if (routeCoords.length > 0) {
+    $('speedVal').textContent = Math.floor(Math.random() * 15) + 45;
+  }
+}, 3000);
+</script>
+</body>
+</html>
