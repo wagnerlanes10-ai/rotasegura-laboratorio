@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0a1628">
+<title>RotaSegura Completo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+  --bg-dark: #070f16;
+  --panel: rgba(15, 23, 42, 0.9);
+  --panel-border: rgba(255,255,255,0.1);
+  --green: #34d399;
+  --red: #ef4444;
+  --text: #ffffff;
+  --muted: #94a3b8;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; width: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #000; color: var(--text); }
+
+/* ========================================= */
+/* TELA INICIAL (MAPA)                       */
+/* ========================================= */
+#map { position: fixed; inset: 0; z-index: 1; background: var(--bg-dark); }
+
+.top-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 500;
+  padding: 15px; display: flex; flex-direction: column; gap: 12px;
+  background: linear-gradient(to bottom, rgba(7,15,22,1), rgba(7,15,22,0.8), transparent);
+}
+.brand { display: flex; align-items: center; justify-content: space-between; color: #fff; font-weight: 800; font-size: 18px; }
+.brand-left { display: flex; align-items: center; gap: 6px; }
+.brand-left span { color: var(--green); font-size: 22px; }
+
+.search-bar { display: flex; gap: 8px; }
+.search-bar input {
+  flex: 1; background: var(--panel); border: 1px solid var(--panel-border);
+  color: #fff; padding: 14px 16px; border-radius: 12px; font-size: 15px; outline: none;
+  backdrop-filter: blur(10px); box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+.search-bar button {
+  background: var(--green); color: #000; border: none; padding: 0 20px;
+  border-radius: 12px; font-weight: 800; cursor: pointer; font-size: 15px;
+}
+
+.bottom-panel {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 500;
+  background: var(--bg-dark); padding: 20px 15px;
+  border-top-left-radius: 24px; border-top-right-radius: 24px;
+  border-top: 1px solid var(--panel-border);
+  box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
+}
+
+.transport-selector { display: flex; gap: 8px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 5px; }
+.transport-btn {
+  flex: 1; min-width: 65px; background: #1e293b; border: 1px solid var(--panel-border);
+  border-radius: 12px; padding: 10px 0; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s;
+}
+.transport-btn span { font-size: 20px; }
+.transport-btn.active { background: rgba(52, 211, 153, 0.15); border-color: var(--green); color: var(--green); }
+
+.btn-primary {
+  width: 100%; background: var(--green); color: #000; border: none; padding: 16px;
+  border-radius: 12px; font-size: 16px; font-weight: 800; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 10px;
+}
+.btn-secondary {
+  width: 100%; background: #1e293b; color: #fff; border: 1px solid var(--panel-border);
+  padding: 14px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+
+/* ========================================= */
+/* MODO PARA-BRISA (HUD)                     */
+/* ========================================= */
+#hud { position: fixed; inset: 0; z-index: 2000; display: none; background: #111; overflow: hidden; }
+#hud video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+#hud-bg {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  background: url('https://images.unsplash.com/photo-1542392656-9bc048221431?q=80&w=1000&auto=format&fit=crop') center/cover;
+  z-index: 0;
+}
+
+/* Estrada Neon 3D (Base) */
+.road-path {
+  position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%);
+  width: 320px; height: 60vh;
+  background: linear-gradient(to top, rgba(0, 162, 255, 0.4) 0%, rgba(0, 162, 255, 0.1) 80%, transparent 100%);
+  z-index: 2; pointer-events: none;
+  filter: drop-shadow(0 0 20px rgba(0, 162, 255, 0.6));
+  transition: clip-path 0.5s ease-in-out;
+}
+/* Formas da estrada baseada na curva */
+.road-path.straight { clip-path: polygon(40% 100%, 60% 100%, 100% 0, 0 0); }
+.road-path.curve-right { clip-path: polygon(40% 100%, 60% 100%, 100% 0, 40% 0); }
+.road-path.curve-left { clip-path: polygon(40% 100%, 60% 100%, 60% 0, 0 0); }
+
+/* Container das setas */
+.chevron-container { position: absolute; inset: 0; z-index: 2; perspective: 500px; pointer-events: none; }
+.chevron {
+  position: absolute; bottom: 0; left: 50%; width: 140px; height: 90px; margin-left: -70px;
+  opacity: 0; animation: driveUpStraight 1.8s linear infinite;
+}
+.chevron svg { width: 100%; height: 100%; fill: none; stroke: #00d2ff; stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 12px #00d2ff); }
+
+/* Animações das setas baseadas na curva */
+@keyframes driveUpStraight {
+  0% { bottom: 10%; transform: scale(0.1) rotateX(75deg); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { bottom: 85%; transform: scale(1.8) rotateX(75deg); opacity: 0; }
+}
+@keyframes driveUpRight {
+  0% { bottom: 10%; transform: scale(0.1) rotateX(75deg) translateX(0); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { bottom: 85%; transform: scale(1.8) rotateX(75deg) translateX(150px) rotateZ(-30deg); opacity: 0; }
+}
+@keyframes driveUpLeft {
+  0% { bottom: 10%; transform: scale(0.1) rotateX(75deg) translateX(0); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { bottom: 85%; transform: scale(1.8) rotateX(75deg) translateX(-150px) rotateZ(30deg); opacity: 0; }
+}
+
+.chevron-container.straight .chevron { animation-name: driveUpStraight; }
+.chevron-container.curve-right .chevron { animation-name: driveUpRight; }
+.chevron-container.curve-left .chevron { animation-name: driveUpLeft; }
+
+.chevron:nth-child(1) { animation-delay: 0s; }
+.chevron:nth-child(2) { animation-delay: 0.3s; }
+.chevron:nth-child(3) { animation-delay: 0.6s; }
+.chevron:nth-child(4) { animation-delay: 0.9s; }
+.chevron:nth-child(5) { animation-delay: 1.2s; }
+.chevron:nth-child(6) { animation-delay: 1.5s; }
+
+/* Interface sobre o vídeo */
+.hud-ui { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
+.hud-ui > * { pointer-events: auto; }
+
+.hud-top { padding: 20px; display: flex; flex-direction: column; gap: 15px; background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent); }
+.hud-header { display: flex; justify-content: space-between; align-items: center; }
+
+.hud-nav-card {
+  background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(15px);
+  border-radius: 24px; padding: 20px; display: flex; gap: 20px; align-items: center;
+  border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+.hud-nav-card .arrow { font-size: 56px; color: #fff; line-height: 1; font-weight: 300; }
+.hud-nav-card .info h1 { font-size: 34px; font-weight: 800; margin-bottom: 4px; }
+.hud-nav-card .info h2 { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+.hud-nav-card .info p { font-size: 15px; color: var(--muted); }
+
+.hud-middle { position: relative; flex: 1; }
+
+/* Trânsito (Topo Esquerdo) */
+.hud-traffic {
+  position: absolute; top: 0px; left: 20px; background: rgba(15, 23, 42, 0.85);
+  padding: 10px 16px; border-radius: 16px; display: flex; gap: 10px; align-items: center; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
+}
+.hud-traffic .icon { font-size: 20px; }
+.hud-traffic .txt b { display: block; font-size: 12px; color: var(--muted); }
+.hud-traffic .txt span { font-size: 14px; color: var(--green); font-weight: 700; }
+
+/* Bússola e Busca (Topo Direito) */
+.hud-compass {
+  position: absolute; top: 0px; right: 20px; width: 50px; height: 50px; background: rgba(15, 23, 42, 0.85);
+  border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px);
+}
+.hud-compass .arrow { width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 16px solid var(--red); margin-bottom: 2px; }
+.hud-compass .n { color: #fff; font-size: 12px; font-weight: 700; }
+
+.hud-search-btn {
+  position: absolute; top: 60px; right: 20px; width: 50px; height: 50px; background: rgba(15, 23, 42, 0.85);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); font-size: 20px; cursor: pointer;
+}
+
+/* Alerta de Risco (Meio da tela, um pouco mais alto) */
+.hud-risk {
+  position: absolute; top: 40%; transform: translateY(-50%); right: 20px; background: linear-gradient(135deg, #ef4444, #b91c1c);
+  border-radius: 50%; width: 85px; height: 85px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 0 25px rgba(239, 68, 68, 0.8); border: 2px solid rgba(255,255,255,0.3); z-index: 5;
+}
+.hud-risk .icon { font-size: 26px; margin-bottom: -2px; }
+.hud-risk b { font-size: 18px; }
+.hud-risk span { font-size: 10px; font-weight: 700; text-align: center; line-height: 1.1; }
+
+/* Velocímetro (Inferior Esquerdo) */
+.hud-speed { 
+  position: absolute; bottom: 110px; left: 20px; 
+  width: 80px; height: 80px; border-radius: 50%; border: 4px solid var(--green); 
+  display: flex; flex-direction: column; align-items: center; justify-content: center; 
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(5px); box-shadow: 0 0 20px rgba(52, 211, 153, 0.4); 
+}
+.hud-speed b { font-size: 28px; line-height: 1; }
+.hud-speed span { font-size: 11px; color: #fff; }
+
+/* Botões Flutuantes (Círculos) */
+.hud-float-btn { 
+  position: absolute; bottom: 110px;
+  width: 56px; height: 56px; border-radius: 50%;
+  background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255,255,255,0.2); 
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 24px; backdrop-filter: blur(10px); cursor: pointer; transition: 0.2s;
+}
+.hud-float-btn:active { transform: scale(0.9); }
+#btnRecenter { right: 20px; }
+#btnSound { right: 90px; } /* Fica ao lado do recentralizar */
+#btnSound.active { background: rgba(52, 211, 153, 0.2); border-color: var(--green); color: var(--green); }
+
+/* Card Inferior (Rota) */
+.hud-bottom-card { 
+  margin: 0 20px 20px 20px; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(20px); 
+  border-radius: 20px; padding: 16px; display: flex; align-items: center; gap: 16px; 
+  border: 1px solid rgba(255,255,255,0.1); 
+}
+.hud-bottom-card .icon-route { width: 54px; height: 54px; background: rgba(52, 211, 153, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--green); font-size: 24px; border: 2px solid var(--green); }
+.hud-bottom-card .info { flex: 1; }
+.hud-bottom-card .info h3 { font-size: 18px; color: var(--green); margin-bottom: 4px; }
+.hud-bottom-card .info p { font-size: 13px; color: var(--muted); }
+.hud-bottom-card .time { text-align: right; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 16px; }
+.hud-bottom-card .time b { display: block; font-size: 18px; margin-bottom: 2px; }
+.hud-bottom-card .time span { font-size: 12px; color: var(--muted); }
+
+.hud-close { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); width: 44px; height: 44px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; }
+
+/* Utilitários */
+#toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: var(--panel); color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; z-index: 3000; display: none; border: 1px solid var(--panel-border); box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+</style>
+</head>
+<body>
+
+<svg style="display:none">
+  <defs>
+    <linearGradient id="cg" x1="20" y1="10" x2="20" y2="35">
+      <stop offset="0%" stop-color="#7dd3fc"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div id="map"></div>
+<div class="top-bar">
+  <div class="brand">
+    <div class="brand-left"><span>🛡️</span> RotaSegura</div>
+    <div style="background:rgba(52,211,153,.2);color:#34d399;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:bold;">● GPS Ativo</div>
+  </div>
+  <div class="search-bar">
+    <input id="destInput" type="text" placeholder="🔍 Para onde vamos?" onkeydown="if(event.key==='Enter')calcRoute()">
+    <button onclick="calcRoute()">IR</button>
+  </div>
+</div>
+
+<div class="bottom-panel">
+  <div class="transport-selector">
+    <div class="transport-btn active" onclick="setTransport(this, 'driving', 'Carro')"><span>🚗</span>Carro</div>
+    <div class="transport-btn" onclick="setTransport(this, 'driving', 'Moto')"><span>🏍️</span>Moto</div>
+    <div class="transport-btn" onclick="setTransport(this, 'cycling', 'Bike')"><span>🚲</span>Bike</div>
+    <div class="transport-btn" onclick="setTransport(this, 'driving', 'Ônibus')"><span>🚌</span>Ônibus</div>
+    <div class="transport-btn" onclick="setTransport(this, 'walking', 'A pé')"><span>🚶</span>A pé</div>
+  </div>
+
+  <div id="routeInfo" style="display:none;margin-bottom:15px;background:#1e293b;padding:12px;border-radius:12px;font-size:14px;display:flex;justify-content:space-between;">
+    <div><b id="distChip">-- km</b><br><span style="font-size:12px;color:#94a3b8;">Distância</span></div>
+    <div><b id="timeChip">-- min</b><br><span style="font-size:12px;color:#94a3b8;">Tempo</span></div>
+  </div>
+
+  <button class="btn-primary" onclick="startHUD()">Iniciar Navegação</button>
+  <button class="btn-secondary" onclick="centerOnUser()">📍 Centralizar no meu GPS</button>
+</div>
+
+<div id="hud">
+  <div id="hud-bg"></div>
+  <video id="hudVideo" autoplay playsinline muted></video>
+  
+  <!-- Estrada Dinâmica (muda de forma via JS) -->
+  <div class="road-path straight" id="roadPath"></div>
+  
+  <div class="chevron-container straight" id="chevronContainer">
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+  </div>
+
+  <div class="hud-ui">
+    <div class="hud-top">
+      <div class="hud-header">
+        <div class="brand-left" style="font-size:20px;font-weight:800;"><span>🛡️</span> RotaSegura</div>
+        <button class="hud-close" onclick="stopHUD()">✕</button>
+      </div>
+      
+      <div class="hud-nav-card">
+        <div class="arrow" id="hudArrowIcon">↪</div>
+        <div class="info">
+          <h1 id="hudDistance">1,3 km</h1>
+          <h2 id="hudInstruction">Curva suave à direita</h2>
+          <p id="hudStreet">R. Cmte. Ari Parreiras</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud-middle">
+      <div class="hud-traffic">
+        <span class="icon">🚗</span>
+        <div class="txt"><b>Trânsito</b><span>Livre</span></div>
+      </div>
+      
+      <div class="hud-compass">
+        <div class="arrow"></div>
+        <div class="n">N</div>
+      </div>
+      <div class="hud-search-btn" onclick="stopHUD()">🔍</div>
+      
+      <div class="hud-risk">
+        <div class="icon">⚠️</div>
+        <b>350 m</b>
+        <span>Ponto de risco</span>
+      </div>
+      
+      <div class="hud-speed">
+        <b id="hudSpeedVal">46</b>
+        <span>km/h</span>
+      </div>
+
+      <!-- Botões circulares e organizados -->
+      <button class="hud-float-btn" id="btnRecenter" onclick="centerOnUser()">🎯</button>
+      <button class="hud-float-btn active" id="btnSound" onclick="toggleVoice()"><span id="voiceIcon">🔊</span></button>
+    </div>
+
+    <div>
+      <div class="hud-bottom-card">
+        <div class="icon-route">➔</div>
+        <div class="info">
+          <h3>Rota segura à frente</h3>
+          <p id="hudCurrentStreet">Sem incidentes na sua rota.</p>
+        </div>
+        <div class="time">
+          <b id="hudTime">21 min</b>
+          <span>Chegada: <span id="hudArrival">06:21</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let map, userPos = null, userMarker = null;
+let currentRoute = null, hudStream = null, destPos = null;
+let currentTransport = 'driving';
+let transportName = 'Carro';
+let nextTurn = 'straight';
+
+// ==========================================
+// 1. SISTEMA DE VOZ
+// ==========================================
+let synth = window.speechSynthesis;
+let voiceEnabled = true;
+let ptVoice = null;
+
+function loadVoices() {
+  const voices = synth.getVoices();
+  ptVoice = voices.find(v => v.lang === 'pt-BR') || voices.find(v => v.lang.startsWith('pt')) || null;
+}
+if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = loadVoices;
+loadVoices();
+
+function speak(text) {
+  if (!voiceEnabled || !synth) return;
+  synth.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'pt-BR';
+  utterance.rate = 1.0;
+  if (ptVoice) utterance.voice = ptVoice;
+  synth.speak(utterance);
+}
+
+function toggleVoice() {
+  voiceEnabled = !voiceEnabled;
+  const btn = $('btnSound');
+  if (voiceEnabled) {
+    btn.classList.add('active');
+    $('voiceIcon').textContent = '🔊';
+    toast('Voz ativada');
+    speak('Voz ativada');
+  } else {
+    btn.classList.remove('active');
+    $('voiceIcon').textContent = '🔇';
+    synth.cancel();
+    toast('Voz desativada');
+  }
+}
+
+// ==========================================
+// 2. MENU DE TRANSPORTE E MAPA
+// ==========================================
+function setTransport(btn, mode, name) {
+  document.querySelectorAll('.transport-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentTransport = mode;
+  transportName = name;
+  if (currentRoute) calcRoute(); // Recalcula se já tiver rota
+}
+
+map = L.map('map', { zoomControl: false, attributionControl: false }).setView([-22.9068, -43.1729], 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+function locateUser() {
+  navigator.geolocation.getCurrentPosition(pos => {
+    userPos = [pos.coords.latitude, pos.coords.longitude];
+    if (userMarker) map.removeLayer(userMarker);
+    userMarker = L.circleMarker(userPos, { radius: 10, color: '#34d399', fillColor: '#34d399', fillOpacity: 1 }).addTo(map);
+    map.setView(userPos, 15);
+  });
+}
+locateUser();
+
+function centerOnUser() { if (userPos) map.setView(userPos, 16); }
+
+// ==========================================
+// 3. CÁLCULO DE ROTA E DETECÇÃO DE CURVA
+// ==========================================
+async function calcRoute() {
+  const q = $('destInput').value.trim();
+  if (!q) return toast('Digite um destino');
+  if (!userPos) return toast('Aguardando GPS...');
+  
+  toast('Buscando destino...');
+  
+  try {
+    const geo = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1&countrycodes=br`);
+    const gdata = await geo.json();
+    if (!gdata.length) return toast('Destino não encontrado');
+    
+    destPos = [parseFloat(gdata[0].lat), parseFloat(gdata[0].lon)];
+    const rt = await fetch(`https://router.project-osrm.org/route/v1/${currentTransport}/${userPos[1]},${userPos[0]};${destPos[1]},${destPos[0]}?overview=full&geometries=geojson`);
+    const rdata = await rt.json();
+    
+    if (rdata.code !== 'Ok') return toast('Rota não encontrada');
+    currentRoute = rdata.routes[0];
+    
+    map.eachLayer(l => { if (l instanceof L.Polyline) map.removeLayer(l); });
+    const coords = currentRoute.geometry.coordinates.map(c => [c[1], c[0]]);
+    L.polyline(coords, { color: '#34d399', weight: 6, opacity: 0.9 }).addTo(map);
+    map.fitBounds(L.latLngBounds(coords), { padding: [50, 50] });
+    
+    const dist = (currentRoute.distance / 1000).toFixed(1).replace('.', ',');
+    const dur = Math.round(currentRoute.duration / 60);
+    const arr = new Date(Date.now() + currentRoute.duration * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    
+    $('routeInfo').style.display = 'flex';
+    $('distChip').textContent = dist + ' km';
+    $('timeChip').textContent = dur + ' min';
+    $('hudDistance').textContent = dist + ' km';
+    $('hudTime').textContent = dur + ' min';
+    $('hudArrival').textContent = arr;
+    
+    // DETECTA A PRÓXIMA CURVA
+    detectNextTurn();
+    
+    speak(`Rota de ${transportName} calculada. Distância de ${dist} quilômetros.`);
+  } catch (e) { toast('Erro ao calcular rota'); console.error(e); }
+}
+
+// Lógica matemática para saber se a rua faz curva
+function detectNextTurn() {
+  if (!currentRoute || !currentRoute.geometry) return;
+  const coords = currentRoute.geometry.coordinates;
+  if (coords.length < 3) return;
+  
+  // Pega os primeiros pontos da rota para analisar o ângulo
+  const a = coords[0];
+  const b = coords[Math.min(5, coords.length - 1)];
+  const c = coords[Math.min(15, coords.length - 1)];
+  
+  const v1 = [b[0] - a[0], b[1] - a[1]];
+  const v2 = [c[0] - b[0], c[1] - b[1]];
+  const cross = v1[0] * v2[1] - v1[1] * v2[0];
+  const angle = Math.atan2(cross, v1[0] * v2[0] + v1[1] * v2[1]) * 180 / Math.PI;
+  
+  if (angle > 15) nextTurn = 'right';       // Na projeção do OSRM, ângulo positivo é direita
+  else if (angle < -15) nextTurn = 'left';  // Ângulo negativo é esquerda
+  else nextTurn = 'straight';
+}
+
+// ==========================================
+// 4. MODO PARA-BRISA (HUD)
+// ==========================================
+function startHUD() {
+  $('hud').style.display = 'block';
+  
+  // Aplica as classes visuais da curva na estrada e nas setas
+  const road = $('roadPath');
+  const chevrons = $('chevronContainer');
+  const arrowIcon = $('hudArrowIcon');
+  const instruction = $('hudInstruction');
+  
+  road.className = 'road-path ' + nextTurn;
+  chevrons.className = 'chevron-container ' + nextTurn;
+  
+  if (nextTurn === 'right') {
+    arrowIcon.textContent = '↪';
+    instruction.textContent = 'Curva à direita';
+    speak(`Navegação de ${transportName} iniciada. Atenção, curva à direita à frente.`);
+  } else if (nextTurn === 'left') {
+    arrowIcon.textContent = '↩';
+    instruction.textContent = 'Curva à esquerda';
+    speak(`Navegação de ${transportName} iniciada. Atenção, curva à esquerda à frente.`);
+  } else {
+    arrowIcon.textContent = '↑';
+    instruction.textContent = 'Siga em frente';
+    speak(`Navegação de ${transportName} iniciada. Siga em frente.`);
+  }
+  
+  // Liga a Câmera
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .then(stream => {
+        hudStream = stream;
+        $('hudVideo').srcObject = stream;
+        $('hud-bg').style.display = 'none'; 
+      })
+      .catch(err => console.log("Câmera negada."));
+  }
+
+  if (!window.speedInterval) {
+    window.speedInterval = setInterval(() => {
+      if ($('hud').style.display === 'block') {
+        $('hudSpeedVal').textContent = Math.floor(Math.random() * 15) + 40;
+      }
+    }, 2500);
+  }
+}
+
+function stopHUD() {
+  $('hud').style.display = 'none';
+  $('hud-bg').style.display = 'block';
+  if (synth) synth.cancel();
+  if (hudStream) {
+    hudStream.getTracks().forEach(t => t.stop());
+    hudStream = null;
+    $('hudVideo').srcObject = null;
+  }
+}
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(window.toastT);
+  window.toastT = setTimeout(() => t.style.display = 'none', 3000);
+}
+</script>
+</body>
+</html>
