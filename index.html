@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0a1628">
+<title>RotaSegura v3.2</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+  --bg-dark: #070f16;
+  --panel: rgba(15, 23, 42, 0.9);
+  --panel-border: rgba(255,255,255,0.1);
+  --green: #34d399;
+  --red: #ef4444;
+  --text: #ffffff;
+  --muted: #94a3b8;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; width: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #000; color: var(--text); }
+
+/* ========================================= */
+/* MAPA COM PERSPECTIVA 3D                    */
+/* ========================================= */
+#map { 
+  position: fixed; inset: 0; z-index: 1; background: var(--bg-dark); 
+  /* AQUI ESTÁ A MÁGICA DA PERSPECTIVA 3D */
+  transform: perspective(1000px) rotateX(45deg) scale(1.4) translateY(5%);
+  transform-origin: 50% 80%;
+}
+
+/* O mapa muda de cor à noite */
+#map.night-mode .leaflet-tile-pane {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+  transition: filter 1s ease;
+}
+
+.top-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 500;
+  padding: 15px; display: flex; flex-direction: column; gap: 12px;
+  background: linear-gradient(to bottom, rgba(7,15,22,1), rgba(7,15,22,0.8), transparent);
+  pointer-events: none;
+}
+.top-bar > * { pointer-events: auto; }
+
+.brand { display: flex; align-items: center; justify-content: space-between; color: #fff; font-weight: 800; font-size: 18px; }
+.brand-left { display: flex; align-items: center; gap: 6px; }
+.brand-left span { color: var(--green); font-size: 22px; }
+
+.search-bar { display: flex; gap: 8px; }
+.search-bar input {
+  flex: 1; background: var(--panel); border: 1px solid var(--panel-border);
+  color: #fff !important; padding: 14px 16px; border-radius: 12px; font-size: 15px; outline: none;
+  backdrop-filter: blur(10px); box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+  color-scheme: dark;
+}
+.search-bar input::placeholder { color: var(--muted); }
+.search-bar button {
+  background: var(--green); color: #000; border: none; padding: 0 20px;
+  border-radius: 12px; font-weight: 800; cursor: pointer; font-size: 15px;
+}
+
+/* BOTÕES FLUTUANTES DO MAPA */
+.map-fab {
+  position: fixed; z-index: 400;
+  width: 50px; height: 50px;
+  border-radius: 50%;
+  background: var(--panel); border: 1px solid var(--panel-border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; color: #fff; cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5); backdrop-filter: blur(10px);
+  transition: 0.2s;
+}
+.map-fab:active { transform: scale(0.9); }
+
+/* Menu Cascata */
+#vehicleMenuContainer {
+  position: fixed; bottom: 210px; left: 15px; z-index: 400;
+  display: flex; flex-direction: column-reverse; align-items: center; gap: 10px;
+}
+.vehicle-cascade {
+  display: flex; flex-direction: column; gap: 10px;
+  opacity: 0; pointer-events: none; transform: translateY(20px);
+  transition: all 0.3s ease;
+}
+.vehicle-cascade.active { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.vehicle-cascade .map-fab {
+  position: relative; width: 44px; height: 44px; font-size: 20px;
+  background: #1e293b; border-color: #334155;
+}
+.vehicle-cascade .map-fab.active { border-color: var(--green); background: rgba(52, 211, 153, 0.2); }
+
+/* Botões do Lado Direito */
+#btnCenterGps { bottom: 90px; right: 15px; font-size: 22px; }
+
+/* BOTÃO INICIAR NAVEGAÇÃO (FAB VERDE) */
+#btnStartNav {
+  position: fixed; bottom: 150px; right: 15px; z-index: 450;
+  width: 60px; height: 60px; border-radius: 50%;
+  background: var(--green); color: #000; border: none;
+  display: none; align-items: center; justify-content: center;
+  font-size: 28px; box-shadow: 0 4px 20px rgba(52, 211, 153, 0.6);
+  cursor: pointer; transition: 0.2s; animation: pulseGreen 2s infinite;
+}
+#btnStartNav:active { transform: scale(0.9); }
+@keyframes pulseGreen {
+  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); }
+  70% { box-shadow: 0 0 0 15px rgba(52, 211, 153, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+
+/* PÍLULA INFERIOR (DISTÂNCIA E TEMPO) */
+#routeInfoPill {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 30px;
+  padding: 10px 20px; display: none; align-items: center; gap: 15px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.6); z-index: 450;
+  white-space: nowrap;
+}
+#routeInfoPill .dist { font-size: 18px; font-weight: 800; color: #fff; }
+#routeInfoPill .time { font-size: 18px; font-weight: 800; color: var(--green); }
+#routeInfoPill .divider { width: 1px; height: 20px; background: rgba(255,255,255,0.2); }
+
+/* ========================================= */
+/* MODO PARA-BRISA (HUD)                     */
+/* ========================================= */
+#hud { position: fixed; inset: 0; z-index: 2000; display: none; background: #111; overflow: hidden; }
+#hud video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+#hud-bg {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  background: url('https://images.unsplash.com/photo-1542392656-9bc048221431?q=80&w=1000&auto=format&fit=crop') center/cover;
+  z-index: 0;
+}
+
+#minimap {
+  position: absolute; top: 65px; right: 15px; width: 120px; height: 100px;
+  border-radius: 12px; border: 2px solid rgba(255, 255, 255, 0.3);
+  z-index: 20; box-shadow: 0 4px 15px rgba(0,0,0,0.6); overflow: hidden; background: #111;
+}
+#minimap .leaflet-control-attribution { display: none !important; }
+#minimap .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); }
+
+.road-path {
+  position: absolute; bottom: -5%; left: 50%; transform: translateX(-50%);
+  width: 320px; height: 75vh; 
+  background: linear-gradient(to top, rgba(0, 162, 255, 0.4) 0%, rgba(0, 162, 255, 0.1) 80%, transparent 100%);
+  z-index: 2; pointer-events: none; filter: drop-shadow(0 0 20px rgba(0, 162, 255, 0.6));
+  transition: clip-path 0.5s ease-in-out;
+}
+.road-path.straight { clip-path: polygon(40% 100%, 60% 100%, 100% 0, 0 0); }
+.road-path.curve-right { clip-path: polygon(40% 100%, 60% 100%, 100% 0, 40% 0); }
+.road-path.curve-left { clip-path: polygon(40% 100%, 60% 100%, 60% 0, 0 0); }
+
+.chevron-container { position: absolute; inset: 0; z-index: 2; perspective: 500px; pointer-events: none; }
+.chevron {
+  position: absolute; bottom: 0; left: 50%; width: 140px; height: 90px; margin-left: -70px;
+  opacity: 0; animation: driveUpStraight 1.8s linear infinite; transform-origin: center bottom;
+}
+.chevron svg { width: 100%; height: 100%; fill: none; stroke: #00d2ff; stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 12px #00d2ff); }
+
+@keyframes driveUpStraight {
+  0% { bottom: -5%; transform: scale(0.1) rotateX(60deg); opacity: 0; }
+  20% { opacity: 1; } 80% { opacity: 1; }
+  100% { bottom: 75%; transform: scale(1.2) rotateX(60deg); opacity: 0; }
+}
+@keyframes driveUpRight {
+  0% { bottom: -5%; transform: scale(0.1) rotateX(60deg) translateX(0); opacity: 0; }
+  20% { opacity: 1; } 80% { opacity: 1; }
+  100% { bottom: 75%; transform: scale(1.2) rotateX(60deg) translateX(120px) rotateZ(-25deg); opacity: 0; }
+}
+@keyframes driveUpLeft {
+  0% { bottom: -5%; transform: scale(0.1) rotateX(60deg) translateX(0); opacity: 0; }
+  20% { opacity: 1; } 80% { opacity: 1; }
+  100% { bottom: 75%; transform: scale(1.2) rotateX(60deg) translateX(-120px) rotateZ(25deg); opacity: 0; }
+}
+.chevron-container.straight .chevron { animation-name: driveUpStraight; }
+.chevron-container.curve-right .chevron { animation-name: driveUpRight; }
+.chevron-container.curve-left .chevron { animation-name: driveUpLeft; }
+.chevron:nth-child(1) { animation-delay: 0s; } .chevron:nth-child(2) { animation-delay: 0.3s; }
+.chevron:nth-child(3) { animation-delay: 0.6s; } .chevron:nth-child(4) { animation-delay: 0.9s; }
+.chevron:nth-child(5) { animation-delay: 1.2s; } .chevron:nth-child(6) { animation-delay: 1.5s; }
+
+.hud-ui { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
+.hud-ui > * { pointer-events: auto; }
+
+.hud-top { padding: 15px; display: flex; flex-direction: column; gap: 10px; background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent); }
+.hud-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+
+.hud-nav-card {
+  background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(15px);
+  border-radius: 16px; padding: 12px 16px; display: flex; gap: 16px; align-items: center;
+  border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+  width: fit-content; min-width: 220px;
+}
+.hud-nav-card .arrow { font-size: 40px; color: #fff; line-height: 1; font-weight: 300; }
+.hud-nav-card .info { display: flex; flex-direction: column; justify-content: center; }
+.hud-nav-card .info h1 { font-size: 26px; font-weight: 800; line-height: 1; margin-bottom: 2px; }
+.hud-nav-card .info h2 { font-size: 15px; font-weight: 500; color: var(--muted); }
+
+.hud-middle { position: relative; flex: 1; }
+
+.hud-traffic {
+  position: absolute; top: 0px; left: 15px; background: rgba(15, 23, 42, 0.85);
+  padding: 8px 12px; border-radius: 12px; display: flex; gap: 8px; align-items: center; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
+}
+.hud-traffic .icon { font-size: 18px; }
+.hud-traffic .txt b { display: block; font-size: 11px; color: var(--muted); }
+.hud-traffic .txt span { font-size: 13px; color: var(--green); font-weight: 700; }
+
+.hud-speed { 
+  position: absolute; bottom: 110px; left: 15px; width: 75px; height: 75px; border-radius: 50%; border: 4px solid var(--green); 
+  display: flex; flex-direction: column; align-items: center; justify-content: center; 
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(5px); box-shadow: 0 0 20px rgba(52, 211, 153, 0.4); 
+}
+.hud-speed b { font-size: 26px; line-height: 1; transition: 0.2s; }
+.hud-speed span { font-size: 10px; color: #fff; }
+
+.hud-right-column { position: absolute; top: 10px; right: 15px; display: flex; flex-direction: column; gap: 10px; align-items: center; z-index: 5; }
+
+.hud-btn {
+  width: 46px; height: 46px; border-radius: 50%; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255,255,255,0.1);
+  display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; backdrop-filter: blur(10px); cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); transition: 0.2s;
+}
+.hud-btn:active { transform: scale(0.9); }
+.hud-btn.active { background: rgba(52, 211, 153, 0.2); border-color: var(--green); color: var(--green); }
+
+#btnMic { color: #fff; font-size: 20px; }
+#btnMic.listening { background: rgba(239, 68, 68, 0.2); border-color: var(--red); color: var(--red); animation: pulseMic 1.5s infinite; }
+@keyframes pulseMic { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+
+.hud-btn.compass { flex-direction: column; gap: 1px; }
+.hud-btn.compass .arrow { width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 14px solid var(--red); }
+.hud-btn.compass .n { font-size: 10px; font-weight: 700; }
+
+.hud-btn.risk {
+  width: 65px; height: 65px; border-radius: 50%; background: linear-gradient(135deg, #ef4444, #b91c1c);
+  border: 2px solid rgba(255,255,255,0.3); box-shadow: 0 0 15px rgba(239, 68, 68, 0.8);
+  flex-direction: column; gap: 0; margin-top: 5px;
+}
+.hud-btn.risk .icon { font-size: 18px; margin-bottom: -1px; }
+.hud-btn.risk b { font-size: 14px; }
+.hud-btn.risk span { font-size: 8px; font-weight: 700; text-align: center; line-height: 1; }
+
+.hud-bottom-card { 
+  margin: 0 15px 10px 15px; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(20px); 
+  border-radius: 16px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(255,255,255,0.1); 
+}
+.hud-bottom-card .icon-route { width: 46px; height: 46px; background: rgba(52, 211, 153, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--green); font-size: 20px; border: 2px solid var(--green); }
+.hud-bottom-card .info { flex: 1; }
+.hud-bottom-card .info h3 { font-size: 16px; color: var(--green); margin-bottom: 2px; }
+.hud-bottom-card .info p { font-size: 12px; color: var(--muted); }
+.hud-bottom-card .time { text-align: right; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 12px; }
+.hud-bottom-card .time b { display: block; font-size: 16px; margin-bottom: 2px; }
+.hud-bottom-card .time span { font-size: 11px; color: var(--muted); }
+
+.hud-close { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); width: 40px; height: 40px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; }
+
+#toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: var(--panel); color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; z-index: 3000; display: none; border: 1px solid var(--panel-border); box-shadow: 0 4px 15px rgba(0,0,0,0.5); text-align: center; }
+</style>
+</head>
+<body>
+
+<svg style="display:none">
+  <defs>
+    <linearGradient id="cg" x1="20" y1="10" x2="20" y2="35">
+      <stop offset="0%" stop-color="#7dd3fc"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div id="map"></div>
+
+<div class="top-bar">
+  <div class="brand">
+    <div class="brand-left"><span>🛡️</span> RotaSegura v3.2</div>
+    <div style="background:rgba(52,211,153,.2);color:#34d399;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:bold;">● GPS Ativo</div>
+  </div>
+  <div class="search-bar">
+    <input id="destInput" type="text" placeholder="🔍 Para onde vamos?" onkeydown="if(event.key==='Enter')calcRoute()">
+    <button onclick="calcRoute()">IR</button>
+  </div>
+</div>
+
+<div id="vehicleMenuContainer">
+  <div class="vehicle-cascade" id="vehicleCascade">
+    <div class="map-fab" data-mode="walking" data-name="A pé" onclick="selectVehicle(this)">🚶</div>
+    <div class="map-fab" data-mode="driving" data-name="Ônibus" onclick="selectVehicle(this)">🚌</div>
+    <div class="map-fab" data-mode="cycling" data-name="Bike" onclick="selectVehicle(this)">🚲</div>
+    <div class="map-fab" data-mode="driving" data-name="Moto" onclick="selectVehicle(this)">🏍️</div>
+  </div>
+  <div class="map-fab active" id="btnVehicle" onclick="toggleVehicleCascade()">🚗</div>
+</div>
+
+<div id="routeInfoPill">
+  <div class="dist" id="distChip">-- km</div>
+  <div class="divider"></div>
+  <div class="time" id="timeChip">-- min</div>
+</div>
+
+<button class="map-fab" id="btnStartNav" onclick="startHUD()">➔</button>
+<div class="map-fab" id="btnCenterGps" onclick="centerOnUser()">🎯</div>
+
+<div id="hud">
+  <div id="hud-bg"></div>
+  <video id="hudVideo" autoplay playsinline muted></video>
+  
+  <div class="road-path straight" id="roadPath"></div>
+  
+  <div class="chevron-container straight" id="chevronContainer">
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+    <div class="chevron"><svg viewBox="0 0 40 40"><path d="M5 25 L20 10 L35 25 L28 25 L28 35 L12 35 L12 25 Z" fill="url(#cg)" stroke="#00d2ff" stroke-width="2"/></svg></div>
+  </div>
+
+  <div class="hud-ui">
+    <div class="hud-top">
+      <div class="hud-header">
+        <div class="brand-left" style="font-size:18px;font-weight:800;"><span>🛡️</span> RotaSegura</div>
+        <button class="hud-close" onclick="stopHUD()">✕</button>
+      </div>
+      
+      <div id="minimap"></div>
+
+      <div class="hud-nav-card">
+        <div class="arrow" id="hudArrowIcon">↑</div>
+        <div class="info">
+          <h1 id="hudDistance">-- km</h1>
+          <h2 id="hudInstruction">Aguardando GPS</h2>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud-middle">
+      <div class="hud-traffic">
+        <span class="icon">🚗</span>
+        <div class="txt"><b>Trânsito</b><span>Livre</span></div>
+      </div>
+      
+      <div class="hud-speed">
+        <b id="hudSpeedVal">0</b>
+        <span>km/h</span>
+      </div>
+
+      <div class="hud-right-column">
+        <div class="hud-btn compass">
+          <div class="arrow"></div>
+          <div class="n">N</div>
+        </div>
+        <div class="hud-btn" onclick="stopHUD()">🔍</div>
+        <button class="hud-btn active" id="btnSound" onclick="toggleVoice()"><span id="voiceIcon">🔊</span></button>
+        <button class="hud-btn" id="btnMic" onclick="startVoiceCall()">🎤</button>
+        <div class="hud-btn risk">
+          <div class="icon">⚠️</div>
+          <b>350 m</b>
+          <span>Ponto de risco</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="hud-bottom-card">
+        <div class="icon-route">➔</div>
+        <div class="info">
+          <h3>Rota segura à frente</h3>
+          <p>Sem incidentes na sua rota.</p>
+        </div>
+        <div class="time">
+          <b id="hudTime">-- min</b>
+          <span>Chegada: <span id="hudArrival">--:--</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let map, userPos = null, userMarker = null;
+let currentRoute = null, hudStream = null, destPos = null;
+let currentTransport = 'driving';
+let transportName = 'Carro';
+let currentTurn = 'straight';
+let watchId = null;
+
+let miniMap = null;
+let miniRouteLayer = null;
+let miniUserMarker = null;
+
+const agenda = [
+  { nome: 'joão', numero: 'tel:11999999999' },
+  { nome: 'maria', numero: 'tel:11888888888' },
+  { nome: 'pedro', numero: 'tel:11777777777' },
+  { nome: 'mãe', numero: 'tel:11666666666' },
+  { nome: 'pai', numero: 'tel:11555555555' }
+];
+
+let synth = window.speechSynthesis;
+let voiceEnabled = true;
+let ptVoice = null;
+
+function checkDayNight() {
+  const hour = new Date().getHours();
+  const isNight = hour >= 18 || hour < 6; 
+  const mapElement = document.getElementById('map');
+  if (isNight) mapElement.classList.add('night-mode');
+  else mapElement.classList.remove('night-mode');
+}
+checkDayNight();
+setInterval(checkDayNight, 60000);
+
+function loadVoices() {
+  const voices = synth.getVoices();
+  ptVoice = voices.find(v => v.lang === 'pt-BR') || voices.find(v => v.lang.startsWith('pt')) || null;
+}
+if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = loadVoices;
+loadVoices();
+
+function speak(text) {
+  if (!voiceEnabled || !synth) return;
+  synth.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'pt-BR';
+  utterance.rate = 1.0;
+  if (ptVoice) utterance.voice = ptVoice;
+  synth.speak(utterance);
+}
+
+function toggleVoice() {
+  voiceEnabled = !voiceEnabled;
+  const btn = $('btnSound');
+  if (voiceEnabled) {
+    btn.classList.add('active');
+    $('voiceIcon').textContent = '🔊';
+    toast('Voz ativada');
+    speak('Voz ativada');
+  } else {
+    btn.classList.remove('active');
+    $('voiceIcon').textContent = '🔇';
+    synth.cancel();
+    toast('Voz desativada');
+  }
+}
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let isListeningForCall = false;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.lang = 'pt-BR';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  recognition.onstart = function() {
+    $('btnMic').classList.add('listening');
+    toast('🎤 Ouvindo...');
+  };
+  recognition.onend = function() {
+    $('btnMic').classList.remove('listening');
+  };
+
+  recognition.onresult = function(event) {
+    const text = event.results[0][0].transcript.toLowerCase();
+    
+    if (!isListeningForCall) {
+      if (text.includes('fazer chamada') || text.includes('ligar')) {
+        isListeningForCall = true;
+        speak('Quem ou qual número você deseja ligar?');
+        setTimeout(() => { startVoiceCall(); }, 2500);
+      } else {
+        toast('Comando não reconhecido. Diga "Fazer chamada".');
+      }
+    } else {
+      isListeningForCall = false;
+      const contato = agenda.find(c => text.includes(c.nome));
+      
+      if (contato) {
+        speak('Ligando para ' + contato.nome);
+        toast('Ligando para ' + contato.nome.toUpperCase() + '...');
+        setTimeout(() => { window.location.href = contato.numero; }, 2000);
+        return;
+      }
+
+      let numberText = text
+        .replace(/zero/g, '0').replace(/um/g, '1').replace(/dois/g, '2').replace(/três/g, '3').replace(/tres/g, '3')
+        .replace(/quatro/g, '4').replace(/cinco/g, '5').replace(/seis/g, '6').replace(/meia/g, '6')
+        .replace(/sete/g, '7').replace(/oito/g, '8').replace(/nove/g, '9').replace(/ligar para /g, '').replace(/ /g, '');
+
+      const numeroLimpo = numberText.replace(/\D/g, '');
+
+      if (numeroLimpo.length >= 8) {
+        speak('Ligando para o número ' + numeroLimpo.split('').join(' '));
+        toast('Ligando para ' + numeroLimpo + '...');
+        setTimeout(() => { window.location.href = 'tel:' + numeroLimpo; }, 2500);
+      } else {
+        speak('Não encontrei esse contato e não entendi o número. Tente novamente.');
+        toast('Contato ou número não reconhecido.');
+      }
+    }
+  };
+  recognition.onerror = function(event) { isListeningForCall = false; };
+}
+
+function startVoiceCall() {
+  if (!recognition) return alert("Navegador não suporta comando de voz.");
+  try { recognition.start(); } catch(e) {}
+}
+
+function toggleVehicleCascade() {
+  $('vehicleCascade').classList.toggle('active');
+}
+
+function selectVehicle(el) {
+  document.querySelectorAll('#vehicleCascade .map-fab').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  currentTransport = el.dataset.mode;
+  transportName = el.dataset.name;
+  $('btnVehicle').textContent = el.textContent;
+  $('vehicleCascade').classList.remove('active');
+  if (currentRoute) calcRoute();
+}
+
+// ==========================================
+// MAPA COM PERSPECTIVA 3D (AQUI ESTÁ A MÁGICA)
+// ==========================================
+// Desativamos o "arrastar" porque no modo 3D o CSS faz o toque ficar estranho.
+map = L.map('map', { zoomControl: false, attributionControl: false, dragging: false }).setView([-22.9068, -43.1729], 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+// Ícone de Seta 3D para o usuário (igual ao print que você mandou)
+const userArrowIcon = L.divIcon({
+  className: '',
+  html: `<div style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="#34d399" style="filter: drop-shadow(0 0 8px rgba(52,211,153,0.8));">
+            <path d="M12 2L22 20L12 17L2 20L12 2Z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+         </div>`,
+  iconSize: [40, 40],
+  iconAnchor: [20, 20]
+});
+
+function centerOnUser() { if (userPos) map.setView(userPos, 16); }
+
+function startTracking() {
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  
+  watchId = navigator.geolocation.watchPosition(pos => {
+    userPos = [pos.coords.latitude, pos.coords.longitude];
+    if (userMarker) map.removeLayer(userMarker);
+    
+    // Usa o novo ícone de seta
+    userMarker = L.marker(userPos, { icon: userArrowIcon }).addTo(map);
+    
+    if (miniMap) {
+      miniMap.setView(userPos, 15);
+      if (miniUserMarker) miniMap.removeLayer(miniUserMarker);
+      miniUserMarker = L.circleMarker(userPos, { radius: 6, color: '#34d399', fillColor: '#34d399', fillOpacity: 1 }).addTo(miniMap);
+    }
+
+    if ($('hud').style.display === 'block') {
+      let speedMps = pos.coords.speed || 0; 
+      $('hudSpeedVal').textContent = Math.round(speedMps * 3.6);
+      if (currentRoute) updateNavigation();
+    }
+  }, err => console.log(err), { enableHighAccuracy: true, maximumAge: 0 });
+}
+startTracking();
+
+async function calcRoute() {
+  const q = $('destInput').value.trim();
+  if (!q) return toast('Digite um destino');
+  if (!userPos) return toast('Aguardando GPS...');
+  
+  toast('Buscando destino...');
+  
+  try {
+    const geo = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1&countrycodes=br`);
+    const gdata = await geo.json();
+    if (!gdata.length) return toast('Destino não encontrado');
+    
+    destPos = [parseFloat(gdata[0].lat), parseFloat(gdata[0].lon)];
+    const rt = await fetch(`https://router.project-osrm.org/route/v1/${currentTransport}/${userPos[1]},${userPos[0]};${destPos[1]},${destPos[0]}?overview=full&geometries=geojson`);
+    const rdata = await rt.json();
+    
+    if (rdata.code !== 'Ok') return toast('Rota não encontrada');
+    currentRoute = rdata.routes[0];
+    
+    map.eachLayer(l => { if (l instanceof L.Polyline) map.removeLayer(l); });
+    const coords = currentRoute.geometry.coordinates.map(c => [c[1], c[0]]);
+    L.polyline(coords, { color: '#34d399', weight: 8, opacity: 0.9 }).addTo(map); // Aumentei a grossura da linha para ficar visível no 3D
+    map.fitBounds(L.latLngBounds(coords), { padding: [50, 50] });
+
+    if (miniMap && miniRouteLayer) {
+      miniRouteLayer.clearLayers();
+      L.polyline(coords, { color: '#34d399', weight: 4 }).addTo(miniRouteLayer);
+    }
+    
+    const dist = (currentRoute.distance / 1000).toFixed(1).replace('.', ',');
+    const dur = Math.round(currentRoute.duration / 60);
+    const arr = new Date(Date.now() + currentRoute.duration * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    
+    $('routeInfoPill').style.display = 'flex';
+    $('btnStartNav').style.display = 'flex';
+    
+    $('distChip').textContent = dist + ' km';
+    $('timeChip').textContent = dur + ' min';
+    $('hudDistance').textContent = dist + ' km';
+    $('hudTime').textContent = dur + ' min';
+    $('hudArrival').textContent = arr;
+    
+    speak(`Rota de ${transportName} calculada. Distância de ${dist} quilômetros.`);
+  } catch (e) { toast('Erro ao calcular rota'); console.error(e); }
+}
+
+function updateNavigation() {
+  if (!currentRoute || !userPos) return;
+  
+  const routeCoords = currentRoute.geometry.coordinates;
+  let minDist = Infinity;
+  let closestIdx = 0;
+  
+  for (let i = 0; i < routeCoords.length; i++) {
+    const d = Math.sqrt(Math.pow(routeCoords[i][1] - userPos[0], 2) + Math.pow(routeCoords[i][0] - userPos[1], 2));
+    if (d < minDist) { minDist = d; closestIdx = i; }
+  }
+  
+  const lookAheadIdx = Math.min(closestIdx + 25, routeCoords.length - 1);
+  if (closestIdx === lookAheadIdx) return;
+  
+  const p1 = routeCoords[closestIdx];
+  const p2 = routeCoords[Math.min(closestIdx + 5, routeCoords.length - 1)];
+  const p3 = routeCoords[lookAheadIdx];
+  
+  const v1 = [p2[0] - p1[0], p2[1] - p1[1]];
+  const v2 = [p3[0] - p2[0], p3[1] - p2[1]];
+  const cross = v1[0] * v2[1] - v1[1] * v2[0];
+  const angle = Math.atan2(cross, v1[0] * v2[0] + v1[1] * v2[1]) * 180 / Math.PI;
+  
+  let newTurn = 'straight';
+  if (angle > 20) newTurn = 'right';
+  else if (angle < -20) newTurn = 'left';
+  
+  if (newTurn !== currentTurn) {
+    currentTurn = newTurn;
+    $('roadPath').className = 'road-path ' + currentTurn;
+    $('chevronContainer').className = 'chevron-container ' + currentTurn;
+    
+    if (currentTurn === 'right') {
+      $('hudArrowIcon').textContent = '↪';
+      $('hudInstruction').textContent = 'Curva à direita';
+    } else if (currentTurn === 'left') {
+      $('hudArrowIcon').textContent = '↩';
+      $('hudInstruction').textContent = 'Curva à esquerda';
+    } else {
+      $('hudArrowIcon').textContent = '↑';
+      $('hudInstruction').textContent = 'Siga em frente';
+    }
+  }
+}
+
+function startHUD() {
+  $('hud').style.display = 'block';
+  
+  if (!miniMap) {
+    miniMap = L.map('minimap', { 
+      zoomControl: false, attributionControl: false,
+      dragging: false, touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false
+    }).setView(userPos || [-22.9068, -43.1729], 15);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(miniMap);
+    miniRouteLayer = L.layerGroup().addTo(miniMap);
+    
+    if (currentRoute) {
+      const coords = currentRoute.geometry.coordinates.map(c => [c[1], c[0]]);
+      L.polyline(coords, { color: '#34d399', weight: 4 }).addTo(miniRouteLayer);
+    }
+  }
+  
+  setTimeout(() => { miniMap.invalidateSize(); }, 100);
+
+  currentTurn = 'straight';
+  $('roadPath').className = 'road-path straight';
+  $('chevronContainer').className = 'chevron-container straight';
+  $('hudArrowIcon').textContent = '↑';
+  $('hudInstruction').textContent = 'Siga em frente';
+  
+  speak(`Navegação de ${transportName} iniciada.`);
+  
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .then(stream => {
+        hudStream = stream;
+        $('hudVideo').srcObject = stream;
+        $('hud-bg').style.display = 'none'; 
+      })
+      .catch(err => console.log("Câmera negada."));
+  }
+}
+
+function stopHUD() {
+  $('hud').style.display = 'none';
+  $('hud-bg').style.display = 'block';
+  if (synth) synth.cancel();
+  if (recognition) recognition.stop();
+  if (hudStream) {
+    hudStream.getTracks().forEach(t => t.stop());
+    hudStream = null;
+    $('hudVideo').srcObject = null;
+  }
+}
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(window.toastT);
+  window.toastT = setTimeout(() => t.style.display = 'none', 3000);
+}
+</script>
+</body>
+</html>
