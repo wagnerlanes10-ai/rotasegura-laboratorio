@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#050d1a">
+<title>RotaSegura - Visão 3D</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+  --neon: #00d2ff;
+  --neon-bright: #3a7bd5;
+  --bg-dark: #020b14;
+  --glass: rgba(10, 20, 35, 0.85);
+  --glass-border: rgba(0, 210, 255, 0.4);
+  --text: #ffffff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; background: var(--bg-dark); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+/* MAPA 3D PERSPECTIVA */
+#map { position: absolute; inset: 0; z-index: 1; background: var(--bg-dark); }
+.map-3d {
+  transform: perspective(1000px) rotateX(45deg) scale(1.4) translateY(10%);
+  transform-origin: 50% 70%;
+}
+/* Filtro para deixar o mapa bem escuro e azulado */
+.map-3d .leaflet-tile-pane {
+  filter: brightness(0.6) contrast(1.2) saturate(1.5) hue-rotate(190deg);
+}
+
+/* CANVAS DE CHUVA (EFEITO VIDRO) */
+#rainCanvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  z-index: 450; pointer-events: none;
+}
+
+/* GLASSMORPHISM */
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+/* TOP BAR */
+#topBar {
+  position: absolute; top: 20px; left: 15px; right: 15px;
+  z-index: 500; display: flex; justify-content: space-between; align-items: flex-start;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-icon {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, #00d2ff, #0055ff);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 15px rgba(0,210,255,0.6);
+}
+.brand-text { font-size: 20px; font-weight: 700; line-height: 1.1; letter-spacing: 0.5px; }
+.brand-sub { font-size: 11px; color: #9cb5d0; font-weight: 400; }
+.rain-badge {
+  padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 6px; color: var(--neon);
+}
+
+/* NAV CARD (ROTATÓRIA) */
+#navCard {
+  position: absolute; top: 85px; left: 15px; right: 15px;
+  z-index: 500; padding: 16px;
+  display: flex; align-items: center; gap: 16px;
+}
+.nav-icon { width: 50px; height: 50px; flex-shrink: 0; }
+.nav-icon svg { width: 100%; height: 100%; fill: none; stroke: var(--neon); stroke-width: 6; filter: drop-shadow(0 0 8px rgba(0,210,255,0.8)); }
+.nav-text strong { display: block; font-size: 18px; line-height: 1.2; font-weight: 600; color: #fff; }
+.nav-text .dist { color: var(--neon); font-size: 18px; font-weight: 700; margin-top: 4px; text-shadow: 0 0 10px rgba(0,210,255,0.5);}
+
+/* BOTÕES LATERAIS */
+.side-controls {
+  position: absolute; top: 45%; transform: translateY(-50%);
+  z-index: 500; display: flex; flex-direction: column; gap: 12px;
+}
+.side-controls.left { left: 15px; }
+.side-controls.right { right: 15px; }
+.side-btn {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: 0.2s;
+}
+.side-btn:active { transform: scale(0.9); }
+.side-btn svg { width: 22px; height: 22px; fill: none; stroke: var(--neon); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(0,210,255,0.6)); }
+
+/* HUD INFERIOR */
+#bottomHUD {
+  position: absolute; bottom: 20px; left: 15px; right: 15px;
+  z-index: 500; padding: 16px 10px;
+  display: flex; justify-content: space-around; align-items: center;
+}
+.hud-item { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; position: relative; }
+.hud-item:not(:last-child)::after {
+  content: ''; position: absolute; right: 0; top: 10%; bottom: 10%;
+  width: 1px; background: linear-gradient(to bottom, transparent, rgba(0,210,255,0.3), transparent);
+}
+.hud-icon svg { width: 24px; height: 24px; fill: none; stroke: #9cb5d0; stroke-width: 2; margin-bottom: 4px;}
+.hud-val { font-size: 20px; font-weight: 700; color: #fff; line-height: 1; }
+.hud-label { font-size: 11px; color: #9cb5d0; margin-top: 4px; }
+.hud-val.text-neon { color: var(--neon); text-shadow: 0 0 10px rgba(0,210,255,0.5); }
+.hud-val.text-cyan { color: #fff; }
+
+/* Ponto de destino e carro */
+.leaflet-marker-icon { filter: drop-shadow(0 0 10px rgba(0,0,0,0.8)); }
+
+</style>
+</head>
+<body>
+
+<div id="map" class="map-3d"></div>
+<canvas id="rainCanvas"></canvas>
+
+<!-- TOPO -->
+<div id="topBar">
+  <div class="brand">
+    <div class="brand-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 16.5v-9l6 4.5-6 4.5z"/></svg>
+    </div>
+    <div>
+      <div class="brand-text">RotaSegura</div>
+      <div class="brand-sub">Seu destino mais seguro</div>
+    </div>
+  </div>
+  <div class="rain-badge glass">
+    <span>🌧️</span> Chuva: ON
+  </div>
+</div>
+
+<!-- CARD NAVEGAÇÃO -->
+<div id="navCard" class="glass">
+  <div class="nav-icon">
+    <!-- Ícone de rotatória -->
+    <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 4a6 6 0 0 0-6 6c0 2.5 1.5 4 3 5v4" />
+      <path d="M12 4a6 6 0 0 1 6 6c0 2.5-1.5 4-3 5v4" />
+      <path d="M12 19l-3-3m3 3l3-3" />
+    </svg>
+  </div>
+  <div class="nav-text">
+    <strong>Na rotatória,<br>pegue a 2ª saída</strong>
+    <div class="dist">300 m</div>
+  </div>
+</div>
+
+<!-- CONTROLES ESQUERDA -->
+<div class="side-controls left">
+  <div class="side-btn glass">
+    <svg viewBox="0 0 24 24"><path d="M12 2L4.5 20.3l.7.7L12 18l6.8 3 .7-.7z" fill="var(--neon)"/></svg>
+  </div>
+  <div class="side-btn glass">
+    <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
+  </div>
+  <div class="side-btn glass">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+  </div>
+</div>
+
+<!-- CONTROLES DIREITA -->
+<div class="side-controls right">
+  <div class="side-btn glass">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>
+  </div>
+  <div class="side-btn glass">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+  </div>
+  <div class="side-btn glass">
+    <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+  </div>
+</div>
+
+<!-- HUD INFERIOR -->
+<div id="bottomHUD" class="glass">
+  <div class="hud-item">
+    <div class="hud-icon">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12l4-4m-4 4l-4 2"/></svg>
+    </div>
+    <div class="hud-val text-cyan" id="speedVal">52</div>
+    <div class="hud-label">km/h</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-icon">
+      <svg viewBox="0 0 24 24" stroke="var(--neon)"><path d="M12 4a6 6 0 0 0-6 6c0 2.5 1.5 4 3 5v4"/><path d="M12 4a6 6 0 0 1 6 6c0 2.5-1.5 4-3 5v4"/></svg>
+    </div>
+    <div class="hud-val text-neon">300 m</div>
+    <div class="hud-label">Rotatória</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-icon">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    </div>
+    <div class="hud-val text-cyan">12 min</div>
+    <div class="hud-label">8,4 km</div>
+  </div>
+  <div class="hud-item">
+    <div class="hud-icon">
+      <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/></svg>
+    </div>
+    <div class="hud-val text-cyan">14:44</div>
+    <div class="hud-label">Chegada</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([-22.9068, -43.1729], 16);
+
+// TILES DARK MATTER (Visual escuro idêntico ao print)
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 20
+}).addTo(map);
+
+// PONTO DE PARTIDA (Carro)
+const carIcon = L.divIcon({
+  className: '',
+  html: `<div style="width:24px;height:24px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 15px rgba(255,255,255,0.8);">
+           <div style="width:16px;height:16px;background:#00d2ff;border-radius:50%;"></div>
+         </div>`,
+  iconSize: [24, 24], iconAnchor: [12, 12]
+});
+L.marker([-22.9068, -43.1729], { icon: carIcon }).addTo(map);
+
+// ROTA FALSA (Para simular o visual do print)
+const routeCoords = [
+  [-22.9110, -43.1720],
+  [-22.9090, -43.1720],
+  [-22.9070, -43.1730],
+  [-22.9040, -43.1720],
+  [-22.9020, -43.1730]
+];
+
+// Efeito Glow na linha (Desenha 3 linhas sobrepostas)
+L.polyline(routeCoords, { color: '#00d2ff', weight: 25, opacity: 0.2, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+L.polyline(routeCoords, { color: '#00d2ff', weight: 12, opacity: 0.6, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+L.polyline(routeCoords, { color: '#ffffff', weight: 4, opacity: 1, lineCap: 'round', lineJoin: 'round', dashArray: '10, 15' }).addTo(map);
+
+// SETA GIGANTE NEON (Usando Canvas para desenhar no mapa)
+const arrowCanvas = document.createElement('canvas');
+arrowCanvas.id = 'routeArrowCanvas';
+arrowCanvas.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; z-index:460; pointer-events:none;';
+$('map').appendChild(arrowCanvas);
+
+const ctx = arrowCanvas.getContext('2d');
+let progress = 0.4; // Posição da seta
+
+function drawArrow() {
+  const dpr = window.devicePixelRatio || 1;
+  arrowCanvas.width = window.innerWidth * dpr;
+  arrowCanvas.height = window.innerHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+  // Pega a posição no mapa e converte para tela
+  const pt = routeCoords[1];
+  const ptNext = routeCoords[2];
+  const px = map.latLngToContainerPoint(pt);
+  const pxNext = map.latLngToContainerPoint(ptNext);
+  
+  // Calcula o ângulo para rotacionar a seta
+  const angle = Math.atan2(pxNext.y - px.y, pxNext.x - px.x) - (Math.PI / 2);
+
+  ctx.save();
+  ctx.translate(px.x, px.y);
+  ctx.rotate(angle);
+
+  // Desenha a Seta Gigante
+  ctx.shadowColor = '#00d2ff';
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = '#00d2ff';
+  
+  ctx.beginPath();
+  ctx.moveTo(0, -60);       // Ponta
+  ctx.lineTo(-30, 20);      // Base esquerda
+  ctx.lineTo(-10, 20);      // Reentrância esquerda
+  ctx.lineTo(-10, 50);      // Rabo esquerdo
+  ctx.lineTo(10, 50);       // Rabo direito
+  ctx.lineTo(10, 20);       // Reentrância direita
+  ctx.lineTo(30, 20);       // Base direita
+  ctx.closePath();
+  ctx.fill();
+
+  // Borda branca
+  ctx.shadowBlur = 10;
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// Redesenha a seta se a tela mudar ou o mapa mover
+map.on('move', drawArrow);
+map.on('zoom', drawArrow);
+window.addEventListener('resize', drawArrow);
+setTimeout(drawArrow, 500); // Desenha após o mapa carregar
+
+// EFEITO DE CHUVA ESTÁTICA (GOTAS NA TELA)
+const rainCanvas = $('rainCanvas');
+const rCtx = rainCanvas.getContext('2d');
+let drops = [];
+
+function initRain() {
+  rainCanvas.width = window.innerWidth;
+  rainCanvas.height = window.innerHeight;
+  drops = [];
+  // Cria gotas espalhadas
+  for (let i = 0; i < 100; i++) {
+    drops.push({
+      x: Math.random() * rainCanvas.width,
+      y: Math.random() * rainCanvas.height,
+      r: Math.random() * 3 + 1,
+      speed: Math.random() * 1 + 0.5,
+      opacity: Math.random() * 0.5 + 0.2
+    });
+  }
+}
+
+function drawRain() {
+  rCtx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
+
+  drops.forEach(d => {
+    // Desenha a gota
+    rCtx.beginPath();
+    rCtx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    rCtx.fillStyle = `rgba(180, 220, 255, ${d.opacity})`;
+    rCtx.fill();
+
+    // Brilho na gota
+    rCtx.beginPath();
+    rCtx.arc(d.x - d.r*0.3, d.y - d.r*0.3, d.r*0.3, 0, Math.PI * 2);
+    rCtx.fillStyle = `rgba(255, 255, 255, ${d.opacity + 0.2})`;
+    rCtx.fill();
+
+    // Movimento lento da gota escorrendo
+    d.y += d.speed;
+    if (d.y > rainCanvas.height) {
+      d.y = -10;
+      d.x = Math.random() * rainCanvas.width;
+    }
+  });
+
+  requestAnimationFrame(drawRain);
+}
+
+window.addEventListener('resize', initRain);
+initRain();
+drawRain();
+
+// Animação da velocidade (Apenas cosmético)
+setInterval(() => {
+  const s = Math.floor(Math.random() * 15) + 45;
+  $('speedVal').textContent = s;
+}, 3000);
+
+</script>
+</body>
+</html>
