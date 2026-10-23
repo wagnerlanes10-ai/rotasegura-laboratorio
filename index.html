@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#090a0f">
+<title>RotaSegura v5.0 - Cyberpunk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+  --bg-dark: #090a0f;
+  --panel: rgba(13, 16, 27, 0.85);
+  --cyan: #00f0ff;
+  --pink: #ff0055;
+  --yellow: #fcee0a;
+  --text: #e0f7fa;
+  --muted: #5e7a8a;
+  --border: rgba(0, 240, 255, 0.3);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; width: 100%; overflow: hidden; font-family: 'Rajdhani', sans-serif; background: #000; color: var(--text); }
+
+/* MAPA 3D CYBERPUNK */
+#map { 
+  position: fixed; inset: 0; z-index: 1; background: var(--bg-dark); 
+  transform: perspective(1000px) rotateX(45deg) scale(1.4) translateY(5%);
+  transform-origin: 50% 80%;
+}
+
+/* Filtro do mapa para ficar com tom neon/cyberpunk */
+#map .leaflet-tile-pane {
+  filter: invert(100%) hue-rotate(190deg) brightness(80%) contrast(120%) saturate(200%);
+  transition: filter 1s ease;
+}
+
+/* BOTÕES FLUTUANTES DO MAPA */
+.top-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 500;
+  padding: 15px; display: flex; flex-direction: column; gap: 12px;
+  background: linear-gradient(to bottom, rgba(9,10,15,1), rgba(9,10,15,0.8), transparent);
+  pointer-events: none;
+}
+.top-bar > * { pointer-events: auto; }
+
+.brand { display: flex; align-items: center; justify-content: space-between; color: var(--cyan); font-weight: 700; font-size: 22px; text-transform: uppercase; letter-spacing: 1px; text-shadow: 0 0 10px var(--cyan); }
+.brand-left { display: flex; align-items: center; gap: 8px; }
+.brand-left span { font-size: 24px; }
+
+.search-bar { display: flex; gap: 8px; }
+.search-bar input {
+  flex: 1; background: var(--panel); border: 1px solid var(--border);
+  color: var(--text) !important; padding: 14px 16px; font-size: 16px; outline: none;
+  backdrop-filter: blur(10px); box-shadow: inset 0 0 10px rgba(0,240,255,0.1);
+  font-family: 'Rajdhani', sans-serif; font-weight: 600; letter-spacing: 1px;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.search-bar button {
+  background: transparent; color: var(--cyan); border: 1px solid var(--cyan); padding: 0 25px;
+  font-weight: 700; cursor: pointer; font-size: 16px; text-transform: uppercase; letter-spacing: 2px;
+  box-shadow: inset 0 0 10px rgba(0,240,255,0.2), 0 0 10px rgba(0,240,255,0.2); transition: 0.2s;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  font-family: 'Rajdhani', sans-serif;
+}
+.search-bar button:active { background: rgba(0,240,255,0.2); }
+
+/* ESTILO BASE DOS FABs (Botões Redondos) */
+.map-fab {
+  position: fixed; z-index: 400;
+  width: 54px; height: 54px;
+  background: var(--panel); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; color: var(--cyan); cursor: pointer;
+  box-shadow: 0 0 15px rgba(0,240,255,0.2), inset 0 0 10px rgba(0,240,255,0.1);
+  transition: 0.2s;
+  border-radius: 12px;
+  clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
+}
+.map-fab:active { transform: scale(0.9); color: var(--pink); border-color: var(--pink); box-shadow: 0 0 15px rgba(255,0,85,0.4); }
+
+/* Menu Cascata */
+#vehicleMenuContainer {
+  position: fixed; bottom: 210px; left: 15px; z-index: 400;
+  display: flex; flex-direction: column-reverse; align-items: center; gap: 10px;
+}
+.vehicle-cascade {
+  display: flex; flex-direction: column; gap: 10px;
+  opacity: 0; pointer-events: none; transform: translateY(20px);
+  transition: all 0.3s ease;
+}
+.vehicle-cascade.active { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.vehicle-cascade .map-fab { width: 44px; height: 44px; font-size: 20px; }
+.vehicle-cascade .map-fab.active { border-color: var(--pink); color: var(--pink); box-shadow: 0 0 15px rgba(255,0,85,0.4); }
+
+/* Posições dos botões */
+#btnMicMain { bottom: 280px; right: 15px; }
+#btnMusicMain { bottom: 220px; right: 15px; }
+#btnCenterGps { bottom: 90px; right: 15px; }
+
+/* BOTÃO INICIAR NAVEGAÇÃO */
+#btnStartNav {
+  position: fixed; bottom: 150px; right: 15px; z-index: 450;
+  width: 65px; height: 65px; 
+  background: rgba(255, 0, 85, 0.1); color: var(--pink); border: 1px solid var(--pink);
+  display: none; align-items: center; justify-content: center;
+  font-size: 30px; box-shadow: 0 0 20px rgba(255,0,85,0.4), inset 0 0 15px rgba(255,0,85,0.2);
+  cursor: pointer; transition: 0.2s; animation: pulsePink 2s infinite;
+  clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+}
+#btnStartNav:active { transform: scale(0.9); background: rgba(255,0,85,0.3); }
+@keyframes pulsePink {
+  0% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0.6), inset 0 0 15px rgba(255,0,85,0.2); }
+  70% { box-shadow: 0 0 0 15px rgba(255, 0, 85, 0), inset 0 0 15px rgba(255,0,85,0.2); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0), inset 0 0 15px rgba(255,0,85,0.2); }
+}
+
+/* PÍLULA INFERIOR */
+#routeInfoPill {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: var(--panel); backdrop-filter: blur(10px);
+  border: 1px solid var(--cyan); 
+  padding: 10px 25px; display: none; align-items: center; gap: 15px;
+  box-shadow: 0 0 20px rgba(0,240,255,0.3), inset 0 0 10px rgba(0,240,255,0.1); z-index: 450;
+  white-space: nowrap; color: var(--text);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+#routeInfoPill .dist { font-size: 20px; font-weight: 700; color: var(--cyan); text-shadow: 0 0 5px var(--cyan); }
+#routeInfoPill .time { font-size: 20px; font-weight: 700; color: var(--pink); text-shadow: 0 0 5px var(--pink); }
+#routeInfoPill .divider { width: 2px; height: 20px; background: rgba(255,255,255,0.2); }
+
+/* ========================================= */
+/* MODO PARA-BRISA (HUD CYBERPUNK)           */
+/* ========================================= */
+#hud { position: fixed; inset: 0; z-index: 2000; display: none; background: #000; overflow: hidden; }
+
+/* Imagem de fundo de alta qualidade: Estrada noturna molhada */
+#hud-bg {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  background: url('https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?q=80&w=1920&auto=format&fit=crop') center/cover;
+  z-index: 0; 
+  filter: brightness(0.4) contrast(1.3) blur(2px); /* Desfoque e escurecimento para destacar o HUD */
+}
+
+#hud video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; display: none; }
+#hud.active-video video { display: block; }
+#hud.active-video #hud-bg { display: none; }
+
+#hudCanvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  z-index: 2; pointer-events: none;
+}
+
+#minimap {
+  position: absolute; top: 75px; right: 15px; width: 120px; height: 100px;
+  border: 1px solid var(--cyan);
+  z-index: 20; box-shadow: 0 0 15px rgba(0,240,255,0.3); overflow: hidden; background: #000;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+#minimap .leaflet-control-attribution { display: none !important; }
+#minimap .leaflet-tile-pane { filter: invert(100%) hue-rotate(190deg) brightness(80%) contrast(150%) saturate(200%); }
+
+.hud-ui { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
+.hud-ui > * { pointer-events: auto; }
+
+.hud-top { padding: 15px; display: flex; flex-direction: column; gap: 10px; background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent); }
+.hud-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+
+.hud-nav-card {
+  background: var(--panel); backdrop-filter: blur(15px);
+  padding: 15px; display: flex; gap: 16px; align-items: center;
+  border: 1px solid var(--pink); box-shadow: 0 0 20px rgba(255,0,85,0.2), inset 0 0 15px rgba(255,0,85,0.1);
+  width: fit-content; min-width: 250px; max-width: 90%;
+  clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
+}
+.hud-nav-card .arrow { font-size: 45px; color: var(--pink); line-height: 1; font-weight: 300; text-shadow: 0 0 10px var(--pink); }
+.hud-nav-card .info { display: flex; flex-direction: column; justify-content: center; }
+.hud-nav-card .info h1 { font-size: 32px; font-weight: 700; color: #fff; line-height: 1; margin-bottom: 2px; text-shadow: 0 0 10px rgba(255,255,255,0.5); }
+.hud-nav-card .info h2 { font-size: 18px; font-weight: 600; color: var(--cyan); text-transform: uppercase; letter-spacing: 1px; }
+.hud-nav-card .info p { font-size: 13px; color: var(--yellow); margin-top: 4px; font-weight: 700; letter-spacing: 1px; }
+
+.hud-middle { position: relative; flex: 1; }
+
+.hud-traffic {
+  position: absolute; top: 0px; left: 15px; background: var(--panel);
+  padding: 10px 15px; display: flex; gap: 10px; align-items: center; backdrop-filter: blur(10px); 
+  border: 1px solid var(--border); box-shadow: inset 0 0 10px rgba(0,240,255,0.1);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.hud-traffic .icon { font-size: 20px; filter: drop-shadow(0 0 5px var(--cyan)); }
+.hud-traffic .txt b { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; }
+.hud-traffic .txt span { font-size: 16px; color: var(--cyan); font-weight: 700; text-shadow: 0 0 5px var(--cyan); }
+
+.hud-speed { 
+  position: absolute; bottom: 110px; left: 15px; width: 85px; height: 85px; 
+  border: 2px solid var(--cyan); 
+  display: flex; flex-direction: column; align-items: center; justify-content: center; 
+  background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); 
+  box-shadow: 0 0 20px rgba(0,240,255,0.3), inset 0 0 15px rgba(0,240,255,0.2); 
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+.hud-speed b { font-size: 32px; font-weight: 700; color: #fff; line-height: 1; text-shadow: 0 0 10px var(--cyan); }
+.hud-speed span { font-size: 11px; color: var(--cyan); font-weight: 600; letter-spacing: 1px; }
+
+.hud-right-column { position: absolute; top: 10px; right: 15px; display: flex; flex-direction: column; gap: 10px; align-items: center; z-index: 5; }
+
+.hud-btn {
+  width: 50px; height: 50px; 
+  background: var(--panel); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; 
+  color: var(--cyan); font-size: 20px; backdrop-filter: blur(10px); cursor: pointer; 
+  box-shadow: 0 0 10px rgba(0,240,255,0.1); transition: 0.2s;
+  clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
+}
+.hud-btn:active { transform: scale(0.9); }
+.hud-btn.active { border-color: var(--pink); color: var(--pink); box-shadow: 0 0 15px rgba(255,0,85,0.4); }
+.btn-mic.listening { border-color: var(--pink); color: var(--pink); animation: pulsePink 1.5s infinite; }
+
+.hud-btn.compass { flex-direction: column; gap: 1px; }
+.hud-btn.compass .arrow { width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 14px solid var(--pink); filter: drop-shadow(0 0 3px var(--pink)); }
+.hud-btn.compass .n { font-size: 12px; font-weight: 700; color: #fff; }
+
+.hud-btn.risk {
+  width: 70px; height: 70px; 
+  background: rgba(252, 238, 10, 0.1); border: 2px solid var(--yellow);
+  box-shadow: 0 0 20px rgba(252, 238, 10, 0.3), inset 0 0 15px rgba(252, 238, 10, 0.1);
+  flex-direction: column; gap: 0; margin-top: 5px; color: var(--yellow);
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+.hud-btn.risk .icon { font-size: 20px; margin-bottom: -2px; }
+.hud-btn.risk b { font-size: 15px; text-shadow: 0 0 5px var(--yellow); }
+.hud-btn.risk span { font-size: 9px; font-weight: 700; text-align: center; line-height: 1; }
+
+.hud-bottom-card { 
+  margin: 0 15px 15px 15px; background: var(--panel); backdrop-filter: blur(20px); 
+  padding: 15px; display: flex; align-items: center; gap: 15px; 
+  border: 1px solid var(--cyan); box-shadow: 0 0 20px rgba(0,240,255,0.2), inset 0 0 15px rgba(0,240,255,0.1); 
+  clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
+}
+.hud-bottom-card .icon-route { 
+  width: 50px; height: 50px; background: rgba(0,240,255,0.1); border: 1px solid var(--cyan); 
+  display: flex; align-items: center; justify-content: center; color: var(--cyan); font-size: 24px; 
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  box-shadow: inset 0 0 10px rgba(0,240,255,0.2);
+}
+.hud-bottom-card .info { flex: 1; }
+.hud-bottom-card .info h3 { font-size: 18px; color: var(--cyan); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 1px; text-shadow: 0 0 5px var(--cyan); }
+.hud-bottom-card .info p { font-size: 13px; color: var(--muted); }
+.hud-bottom-card .time { text-align: right; border-left: 1px solid rgba(0,240,255,0.3); padding-left: 15px; }
+.hud-bottom-card .time b { display: block; font-size: 18px; color: var(--pink); margin-bottom: 2px; text-shadow: 0 0 5px var(--pink); }
+.hud-bottom-card .time span { font-size: 12px; color: var(--muted); }
+
+.hud-close { 
+  background: rgba(255,0,85,0.1); border: 1px solid var(--pink); width: 44px; height: 44px; 
+  color: var(--pink); display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; 
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  box-shadow: 0 0 10px rgba(255,0,85,0.2); transition: 0.2s;
+}
+.hud-close:active { background: rgba(255,0,85,0.3); }
+
+#toast { 
+  position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); 
+  background: var(--panel); color: var(--cyan); padding: 12px 25px; 
+  border: 1px solid var(--cyan); font-size: 15px; font-weight: 600; z-index: 3000; display: none; 
+  box-shadow: 0 0 15px rgba(0,240,255,0.3); text-align: center; letter-spacing: 1px;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="top-bar">
+  <div class="brand">
+    <div class="brand-left"><span>🛡️</span> RotaSegura v5.0</div>
+    <div style="background:rgba(0,240,255,.1);color:var(--cyan);padding:6px 12px;border:1px solid var(--cyan);font-size:12px;font-weight:bold;clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);">● SYSTEM ONLINE</div>
+  </div>
+  <div class="search-bar">
+    <input id="destInput" type="text" placeholder="INSERIR DESTINO..." onkeydown="if(event.key==='Enter')calcRoute()">
+    <button onclick="calcRoute()">IR</button>
+  </div>
+</div>
+
+<div id="vehicleMenuContainer">
+  <div class="vehicle-cascade" id="vehicleCascade">
+    <div class="map-fab" data-mode="walking" data-name="A pé" onclick="selectVehicle(this)">🚶</div>
+    <div class="map-fab" data-mode="driving" data-name="Ônibus" onclick="selectVehicle(this)">🚌</div>
+    <div class="map-fab" data-mode="cycling" data-name="Bike" onclick="selectVehicle(this)">🚲</div>
+    <div class="map-fab" data-mode="driving" data-name="Moto" onclick="selectVehicle(this)">🏍️</div>
+  </div>
+  <div class="map-fab active" id="btnVehicle" onclick="toggleVehicleCascade()">🚗</div>
+</div>
+
+<div id="routeInfoPill">
+  <div class="dist" id="distChip">-- KM</div>
+  <div class="divider"></div>
+  <div class="time" id="timeChip">-- MIN</div>
+</div>
+
+<button class="map-fab btn-mic" id="btnMicMain" onclick="startVoiceCall()">🎤</button>
+<button class="map-fab" id="btnMusicMain" onclick="toggleMusic()">🎵</button>
+<button class="map-fab" id="btnStartNav" onclick="startHUD()">➔</button>
+<div class="map-fab" id="btnCenterGps" onclick="centerOnUser()">🎯</div>
+
+<audio id="musicPlayer" crossorigin="anonymous"></audio>
+
+<div id="hud">
+  <div id="hud-bg"></div>
+  <video id="hudVideo" autoplay playsinline muted></video>
+  
+  <canvas id="hudCanvas"></canvas>
+
+  <div class="hud-ui">
+    <div class="hud-top">
+      <div class="hud-header">
+        <div class="brand-left" style="font-size:20px;font-weight:700;color:var(--cyan);text-shadow:0 0 10px var(--cyan);"><span>🛡️</span> RotaSegura</div>
+        <button class="hud-close" onclick="stopHUD()">✕</button>
+      </div>
+      
+      <div id="minimap"></div>
+
+      <div class="hud-nav-card">
+        <div class="arrow" id="hudArrowIcon">↑</div>
+        <div class="info">
+          <h1 id="hudDistance">-- KM</h1>
+          <h2 id="hudInstruction">Aguardando Sinal</h2>
+          <p id="hudStreetName">Sincronizando...</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud-middle">
+      <div class="hud-traffic">
+        <span class="icon">🚗</span>
+        <div class="txt"><b>SISTEMA</b><span>LIVRE</span></div>
+      </div>
+      
+      <div class="hud-speed">
+        <b id="hudSpeedVal">0</b>
+        <span>KM/H</span>
+      </div>
+
+      <div class="hud-right-column">
+        <div class="hud-btn compass">
+          <div class="arrow"></div>
+          <div class="n">N</div>
+        </div>
+        <div class="hud-btn" onclick="stopHUD()">🔍</div>
+        <button class="hud-btn active" id="btnSound" onclick="toggleVoice()"><span id="voiceIcon">🔊</span></button>
+        <button class="hud-btn btn-mic" onclick="startVoiceCall()">🎤</button>
+        <button class="hud-btn" onclick="toggleMusic()">🎵</button>
+        <div class="hud-btn risk">
+          <div class="icon">⚠️</div>
+          <b>350 M</b>
+          <span>PERIGO</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="hud-bottom-card">
+        <div class="icon-route">➔</div>
+        <div class="info">
+          <h3>Rota Segura</h3>
+          <p id="musicStatus">Nenhum incidente detectado.</p>
+        </div>
+        <div class="time">
+          <b id="hudTime">-- MIN</b>
+          <span>CHEGADA: <span id="hudArrival">--:--</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let map, userPos = null, userMarker = null;
+let currentRoute = null, hudStream = null, destPos = null;
+let currentTransport = 'driving';
+let transportName = 'Carro';
+let currentTurn = 'straight';
+let watchId = null;
+let routeSteps = []; 
+
+let miniMap = null;
+let miniRouteLayer = null;
+let miniUserMarker = null;
+let destMarker = null;
+
+const hudCanvas = $('hudCanvas');
+const hCtx = hudCanvas.getContext('2d');
+let hudAnimTime = 0;
+let currentCurveOffset = 0; 
+let targetCurveOffset = 0;  
+
+const agenda = [
+  { nome: 'joão', numero: '11999999999' },
+  { nome: 'maria', numero: '11888888888' },
+  { nome: 'pedro', numero: '11777777777' },
+  { nome: 'mãe', numero: '11666666666' },
+  { nome: 'pai', numero: '11555555555' }
+];
+
+// ==========================================
+// PLAYER DE MÚSICA
+// ==========================================
+const radioStreams = {
+  'rock': 'https://ice1.somafm.com/bagel-128-mp3',
+  'pop': 'https://ice1.somafm.com/poptron-128-mp3',
+  'eletronica': 'https://ice1.somafm.com/beatblender-128-mp3',
+  'sertanejo': 'https://ice1.somafm.com/folkfwd-128-mp3',
+  'mpb': 'https://ice1.somafm.com/folkfwd-128-mp3'
+};
+
+let isMusicPlaying = false;
+const musicPlayer = $('musicPlayer');
+
+function playMusic(genre) {
+  let streamUrl = radioStreams[genre] || radioStreams['pop'];
+  musicPlayer.src = streamUrl;
+  musicPlayer.volume = 0.6;
+  
+  musicPlayer.play().then(() => {
+    isMusicPlaying = true;
+    speak(`Tocando ${genre}.`);
+    toast(`🎵 Tocando: ${genre.toUpperCase()}`);
+    $('musicStatus').textContent = `Tocando: ${genre}`;
+  }).catch(e => {
+    toast("Erro ao conectar na rádio.");
+  });
+}
+
+function stopMusic() {
+  musicPlayer.pause();
+  isMusicPlaying = false;
+  speak('Música parada.');
+  toast('🎵 Música pausada');
+  $('musicStatus').textContent = "Nenhum incidente detectado.";
+}
+
+function toggleMusic() {
+  if (isMusicPlaying) {
+    stopMusic();
+  } else {
+    voiceState = 'music_genre';
+    speak('Qual estilo de música você quer ouvir? Rock, pop, eletrônica ou sertanejo?', () => {
+      startVoiceCall();
+    });
+  }
+}
+
+// ==========================================
+// SISTEMA DE VOZ
+// ==========================================
+let synth = window.speechSynthesis;
+let voiceEnabled = true;
+let ptVoice = null;
+let voiceState = 'idle';
+
+function loadVoices() {
+  const voices = synth.getVoices();
+  ptVoice = voices.find(v => v.lang === 'pt-BR') || voices.find(v => v.lang.startsWith('pt')) || null;
+}
+if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = loadVoices;
+loadVoices();
+
+function speak(text, callback) {
+  if (!voiceEnabled || !synth) {
+    if (callback) callback();
+    return;
+  }
+  synth.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'pt-BR';
+  utterance.rate = 1.0;
+  if (ptVoice) utterance.voice = ptVoice;
+  if (callback) utterance.onend = callback;
+  synth.speak(utterance);
+}
+
+function toggleVoice() {
+  voiceEnabled = !voiceEnabled;
+  const btn = $('btnSound');
+  if (voiceEnabled) {
+    btn.classList.add('active');
+    $('voiceIcon').textContent = '🔊';
+    toast('Voz ativada');
+    speak('Voz ativada');
+  } else {
+    btn.classList.remove('active');
+    $('voiceIcon').textContent = '🔇';
+    synth.cancel();
+    toast('Voz desativada');
+  }
+}
+
+function triggerTel(numero) {
+  const numLimpo = numero.replace(/\D/g, '');
+  if (!numLimpo) return;
+  if (/Android/i.test(navigator.userAgent)) {
+    window.location.href = `intent://${numLimpo}#Intent;scheme=tel;action=android.intent.action.CALL;end`;
+  } else {
+    window.location.href = 'tel:' + numLimpo;
+  }
+}
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.lang = 'pt-BR';
+  recognition.continuous = false; 
+  recognition.interimResults = false;
+
+  recognition.onstart = function() {
+    document.querySelectorAll('.btn-mic').forEach(btn => btn.classList.add('listening'));
+    toast('🎤 Ouvindo...');
+  };
+  recognition.onend = function() {
+    document.querySelectorAll('.btn-mic').forEach(btn => btn.classList.remove('listening'));
+  };
+
+  recognition.onresult = function(event) {
+    const text = event.results[0][0].transcript.toLowerCase();
+    
+    if (text.includes('parar música') || text.includes('parar musica') || text.includes('pausar')) {
+      if (isMusicPlaying) { stopMusic(); voiceState = 'idle'; }
+      return;
+    }
+
+    if (voiceState === 'idle') {
+      if (text.includes('fazer chamada') || text.includes('ligar')) {
+        voiceState = 'calling';
+        speak('Quem ou qual número você deseja ligar?', () => { startVoiceCall(); });
+      } 
+      else if (text.includes('tocar música') || text.includes('tocar musica') || text.includes('quero ouvir')) {
+        voiceState = 'music_genre';
+        speak('Qual estilo de música você quer ouvir? Rock, pop, eletrônica ou sertanejo?', () => { startVoiceCall(); });
+      }
+      else if (text.includes('ir para') || text.includes('navegar para') || text.includes('rota para') || text.includes('destino')) {
+        let destino = text.replace('ir para', '').replace('navegar para', '').replace('rota para', '').replace('destino', '').trim();
+        if (destino.length > 2) {
+          $('destInput').value = destino;
+          speak(`Calculando rota para ${destino}`);
+          setTimeout(() => { calcRoute(); }, 1500);
+        } else {
+          speak('Destino não reconhecido. Tente novamente.');
+        }
+      }
+      else { toast('Comando não reconhecido.'); }
+    } 
+    else if (voiceState === 'calling') {
+      voiceState = 'idle';
+      const contato = agenda.find(c => text.includes(c.nome));
+      if (contato) {
+        speak('Ligando agora');
+        toast('Abrindo discador...');
+        setTimeout(() => { triggerTel(contato.numero); }, 100);
+        return;
+      }
+      let numberText = text
+        .replace(/zero/g, '0').replace(/um/g, '1').replace(/dois/g, '2').replace(/três/g, '3').replace(/tres/g, '3')
+        .replace(/quatro/g, '4').replace(/cinco/g, '5').replace(/seis/g, '6').replace(/meia/g, '6')
+        .replace(/sete/g, '7').replace(/oito/g, '8').replace(/nove/g, '9')
+        .replace(/ligar para /g, '').replace(/ /g, '');
+      const numeroLimpo = numberText.replace(/\D/g, '');
+      if (numeroLimpo.length >= 8) {
+        speak('Ligando agora');
+        toast('Abrindo discador...');
+        setTimeout(() => { triggerTel(numeroLimpo); }, 100);
+      } else { speak('Número não reconhecido.'); }
+    }
+    else if (voiceState === 'music_genre') {
+      voiceState = 'idle';
+      if (text.includes('rock')) playMusic('rock');
+      else if (text.includes('pop')) playMusic('pop');
+      else if (text.includes('eletrônica') || text.includes('eletronica')) playMusic('eletronica');
+      else if (text.includes('sertanejo')) playMusic('sertanejo');
+      else if (text.includes('mpb')) playMusic('mpb');
+      else { speak('Estilo não reconhecido.'); }
+    }
+  };
+  
+  recognition.onerror = function(event) { 
+    voiceState = 'idle'; 
+    document.querySelectorAll('.btn-mic').forEach(btn => btn.classList.remove('listening'));
+  };
+}
+
+function startVoiceCall() {
+  if (!recognition) return alert("Navegador não suporta comando de voz.");
+  try { synth.cancel(); recognition.start(); } catch(e) {}
+}
+
+// ==========================================
+// MAPA E ROTAS
+// ==========================================
+map = L.map('map', { zoomControl: false, attributionControl: false, dragging: false }).setView([-22.9068, -43.1729], 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+const userArrowIcon = L.divIcon({
+  className: '',
+  html: `<div style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="#00f0ff" style="filter: drop-shadow(0 0 10px #00f0ff);">
+            <path d="M12 2L22 20L12 17L2 20L12 2Z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+         </div>`,
+  iconSize: [40, 40],
+  iconAnchor: [20, 20]
+});
+
+const destIcon = L.divIcon({
+  className: '',
+  html: `<div style="font-size: 30px; filter: drop-shadow(0 0 10px #ff0055);">🚩</div>`,
+  iconSize: [30, 30],
+  iconAnchor: [15, 30]
+});
+
+function centerOnUser() { if (userPos) map.setView(userPos, 16); }
+
+function startTracking() {
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  
+  watchId = navigator.geolocation.watchPosition(pos => {
+    userPos = [pos.coords.latitude, pos.coords.longitude];
+    if (userMarker) map.removeLayer(userMarker);
+    userMarker = L.marker(userPos, { icon: userArrowIcon }).addTo(map);
+    
+    if (miniMap) {
+      miniMap.setView(userPos, 15);
+      if (miniUserMarker) miniMap.removeLayer(miniUserMarker);
+      miniUserMarker = L.circleMarker(userPos, { radius: 6, color: '#00f0ff', fillColor: '#00f0ff', fillOpacity: 1 }).addTo(miniMap);
+    }
+
+    if ($('hud').style.display === 'block') {
+      let speedMps = pos.coords.speed || 0; 
+      $('hudSpeedVal').textContent = Math.round(speedMps * 3.6);
+      if (currentRoute) updateNavigation();
+    }
+  }, err => console.log(err), { enableHighAccuracy: true, maximumAge: 0 });
+}
+startTracking();
+
+async function calcRoute() {
+  const q = $('destInput').value.trim();
+  if (!q) return toast('INSIRA UM DESTINO');
+  if (!userPos) return toast('AGUARDANDO SINAL GPS...');
+  
+  toast('PROCURANDO DESTINO...');
+  
+  try {
+    const geo = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1&countrycodes=br`);
+    const gdata = await geo.json();
+    if (!gdata.length) return toast('DESTINO NÃO ENCONTRADO');
+    
+    destPos = [parseFloat(gdata[0].lat), parseFloat(gdata[0].lon)];
+    
+    if(destMarker) map.removeLayer(destMarker);
+    destMarker = L.marker(destPos, { icon: destIcon }).addTo(map);
+
+    const rt = await fetch(`https://router.project-osrm.org/route/v1/${currentTransport}/${userPos[1]},${userPos[0]};${destPos[1]},${destPos[0]}?overview=full&geometries=geojson&steps=true`);
+    const rdata = await rt.json();
+    
+    if (rdata.code !== 'Ok') return toast('ROTA NÃO ENCONTRADA');
+    currentRoute = rdata.routes[0];
+    routeSteps = currentRoute.legs[0].steps; 
+    
+    map.eachLayer(l => { if (l instanceof L.Polyline) map.removeLayer(l); });
+    const coords = currentRoute.geometry.coordinates.map(c => [c[1], c[0]]);
+    L.polyline(coords, { color: '#00f0ff', weight: 6, opacity: 0.8 }).addTo(map);
+    map.fitBounds(L.latLngBounds(coords), { padding: [50, 50] });
+
+    if (miniMap && miniRouteLayer) {
+      miniRouteLayer.clearLayers();
+      L.polyline(coords, { color: '#00f0ff', weight: 4 }).addTo(miniRouteLayer);
+    }
+    
+    const dist = (currentRoute.distance / 1000).toFixed(1).replace('.', ',');
+    const dur = Math.round(currentRoute.duration / 60);
+    const arr = new Date(Date.now() + currentRoute.duration * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    
+    $('routeInfoPill').style.display = 'flex';
+    $('btnStartNav').style.display = 'flex';
+    
+    $('distChip').textContent = dist + ' KM';
+    $('timeChip').textContent = dur + ' MIN';
+    $('hudDistance').textContent = dist + ' KM';
+    $('hudTime').textContent = dur + ' MIN';
+    $('hudArrival').textContent = arr;
+    
+    speak(`Rota de ${transportName} calculada. Distância de ${dist} quilômetros.`);
+  } catch (e) { toast('ERRO DE CONEXÃO'); console.error(e); }
+}
+
+function toggleVehicleCascade() {
+  $('vehicleCascade').classList.toggle('active');
+}
+
+function selectVehicle(el) {
+  document.querySelectorAll('#vehicleCascade .map-fab').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  currentTransport = el.dataset.mode;
+  transportName = el.dataset.name;
+  $('btnVehicle').textContent = el.textContent;
+  $('vehicleCascade').classList.remove('active');
+  if (currentRoute) calcRoute();
+}
+
+function updateNavigation() {
+  if (!currentRoute || !userPos) return;
+  
+  const routeCoords = currentRoute.geometry.coordinates;
+  let minDist = Infinity;
+  let closestIdx = 0;
+  
+  for (let i = 0; i < routeCoords.length; i++) {
+    const d = Math.sqrt(Math.pow(routeCoords[i][1] - userPos[0], 2) + Math.pow(routeCoords[i][0] - userPos[1], 2));
+    if (d < minDist) { minDist = d; closestIdx = i; }
+  }
+  
+  const lookAheadIdx = Math.min(closestIdx + 25, routeCoords.length - 1);
+  if (closestIdx === lookAheadIdx) return;
+  
+  const p1 = routeCoords[closestIdx];
+  const p2 = routeCoords[Math.min(closestIdx + 5, routeCoords.length - 1)];
+  const p3 = routeCoords[lookAheadIdx];
+  
+  const v1 = [p2[0] - p1[0], p2[1] - p1[1]];
+  const v2 = [p3[0] - p2[0], p3[1] - p2[1]];
+  const cross = v1[0] * v2[1] - v1[1] * v2[0];
+  const angle = Math.atan2(cross, v1[0] * v2[0] + v1[1] * v2[1]) * 180 / Math.PI;
+  
+  if (angle > 15) { 
+    targetCurveOffset = 250; 
+    currentTurn = 'right'; 
+  } else if (angle < -15) { 
+    targetCurveOffset = -250; 
+    currentTurn = 'left'; 
+  } else { 
+    targetCurveOffset = 0; 
+    currentTurn = 'straight'; 
+  }
+  
+  if (currentTurn === 'right') {
+    $('hudArrowIcon').textContent = '↪';
+    $('hudInstruction').textContent = 'Curva à direita';
+  } else if (currentTurn === 'left') {
+    $('hudArrowIcon').textContent = '↩';
+    $('hudInstruction').textContent = 'Curva à esquerda';
+  } else {
+    $('hudArrowIcon').textContent = '↑';
+    $('hudInstruction').textContent = 'Siga em frente';
+  }
+
+  if (routeSteps.length > 0) {
+    let stepName = "RUA NÃO IDENTIFICADA";
+    for (let i = 0; i < routeSteps.length; i++) {
+      let step = routeSteps[i];
+      if (step.name && step.name.trim() !== "") {
+        stepName = step.name;
+        break;
+      }
+    }
+    $('hudStreetName').textContent = stepName.toUpperCase();
+  }
+}
+
+// ==========================================
+// ANIMAÇÃO DO CANVAS CYBERPUNK
+// ==========================================
+function resizeHudCanvas() {
+  if (!hudCanvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  hudCanvas.width = window.innerWidth * dpr;
+  hudCanvas.height = window.innerHeight * dpr;
+  hCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resizeHudCanvas);
+
+function drawHudAnimation() {
+  if (!$('hud').classList.contains('active')) {
+    requestAnimationFrame(drawHudAnimation);
+    return;
+  }
+
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  hCtx.clearRect(0, 0, W, H);
+
+  const cx = W / 2;
+  const cy = H;
+
+  currentCurveOffset += (targetCurveOffset - currentCurveOffset) * 0.05;
+
+  const bottomWidth = 320; 
+  const topWidth = 80;     
+
+  // ESTRADA CIANO NEON
+  hCtx.beginPath();
+  hCtx.moveTo(cx - bottomWidth/2, cy + 50);
+  hCtx.quadraticCurveTo(cx - bottomWidth/2 + currentCurveOffset * 0.5, cy * 0.5, cx - topWidth/2 + currentCurveOffset, 0);
+  hCtx.lineTo(cx + topWidth/2 + currentCurveOffset, 0);
+  hCtx.quadraticCurveTo(cx + bottomWidth/2 + currentCurveOffset * 0.5, cy * 0.5, cx + bottomWidth/2, cy + 50);
+  hCtx.closePath();
+
+  let grad = hCtx.createLinearGradient(0, cy, 0, 0);
+  grad.addColorStop(0, 'rgba(0, 240, 255, 0.5)'); // Ciano brilhante embaixo
+  grad.addColorStop(1, 'rgba(0, 240, 255, 0.0)'); // Transparente no topo
+  hCtx.fillStyle = grad;
+  hCtx.fill();
+
+  // SETAS ROSA NEON
+  hudAnimTime += 0.015;
+  const numArrows = 5;
+
+  for (let i = 0; i < numArrows; i++) {
+    let t = (hudAnimTime + i * 0.2) % 1;
+
+    let p0 = {x: cx, y: cy + 50};
+    let p1 = {x: cx + currentCurveOffset * 0.5, y: cy * 0.5};
+    let p2 = {x: cx + currentCurveOffset, y: 0};
+
+    let x = Math.pow(1-t, 2)*p0.x + 2*(1-t)*t*p1.x + Math.pow(t, 2)*p2.x;
+    let y = Math.pow(1-t, 2)*p0.y + 2*(1-t)*t*p1.y + Math.pow(t, 2)*p2.y;
+
+    let dx = 2*(1-t)*(p1.x - p0.x) + 2*t*(p2.x - p1.x);
+    let dy = 2*(1-t)*(p1.y - p0.y) + 2*t*(p2.y - p1.y);
+    let angle = Math.atan2(dy, dx) + Math.PI/2;
+
+    let scale = 0.5 + t * 0.8;
+    let opacity = 1;
+    if (t > 0.8) opacity = (1 - t) / 0.2;
+    if (t < 0.1) opacity = t / 0.1;
+
+    hCtx.globalAlpha = opacity;
+
+    hCtx.save();
+    hCtx.translate(x, y);
+    hCtx.rotate(angle);
+    hCtx.scale(scale, scale);
+
+    hCtx.beginPath();
+    hCtx.moveTo(0, -30);
+    hCtx.lineTo(20, 10);
+    hCtx.lineTo(8, 10);
+    hCtx.lineTo(8, 30);
+    hCtx.lineTo(-8, 30);
+    hCtx.lineTo(-8, 10);
+    hCtx.lineTo(-20, 10);
+    hCtx.closePath();
+
+    // Preenchimento rosa neon
+    hCtx.fillStyle = 'rgba(255, 0, 85, 0.9)';
+    hCtx.shadowColor = '#ff0055';
+    hCtx.shadowBlur = 20;
+    hCtx.fill();
+    
+    // Contorno ciano
+    hCtx.strokeStyle = '#00f0ff';
+    hCtx.lineWidth = 2.5;
+    hCtx.stroke();
+    
+    hCtx.restore();
+  }
+
+  requestAnimationFrame(drawHudAnimation);
+}
+
+// ==========================================
+// MODO PARA-BRISA
+// ==========================================
+function startHUD() {
+  $('hud').style.display = 'block';
+  $('hud').classList.add('active');
+  $('hud').classList.add('active-video'); // Ativa a câmera por cima do fundo
+
+  resizeHudCanvas();
+  requestAnimationFrame(drawHudAnimation);
+  
+  if (!miniMap) {
+    miniMap = L.map('minimap', { 
+      zoomControl: false, attributionControl: false,
+      dragging: false, touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false
+    }).setView(userPos || [-22.9068, -43.1729], 15);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(miniMap);
+    miniRouteLayer = L.layerGroup().addTo(miniMap);
+    
+    if (currentRoute) {
+      const coords = currentRoute.geometry.coordinates.map(c => [c[1], c[0]]);
+      L.polyline(coords, { color: '#00f0ff', weight: 4 }).addTo(miniRouteLayer);
+    }
+  }
+  
+  setTimeout(() => { miniMap.invalidateSize(); }, 100);
+
+  currentTurn = 'straight';
+  $('hudArrowIcon').textContent = '↑';
+  $('hudInstruction').textContent = 'Siga em frente';
+  
+  speak(`Navegação de ${transportName} iniciada.`);
+  
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .then(stream => {
+        hudStream = stream;
+        $('hudVideo').srcObject = stream;
+      })
+      .catch(err => {
+        console.log("Câmera negada, usando modo background.");
+        $('hud').classList.remove('active-video'); // Fallback para a imagem de fundo
+      });
+  }
+}
+
+function stopHUD() {
+  $('hud').style.display = 'none';
+  $('hud').classList.remove('active');
+  $('hud').classList.remove('active-video');
+  if (synth) synth.cancel();
+  if (recognition) recognition.stop();
+  if (hudStream) {
+    hudStream.getTracks().forEach(t => t.stop());
+    hudStream = null;
+    $('hudVideo').srcObject = null;
+  }
+}
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(window.toastT);
+  window.toastT = setTimeout(() => t.style.display = 'none', 3000);
+}
+</script>
+</body>
+</html>
