@@ -1,0 +1,957 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>RotaSegura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+  --primary: #007aff;
+  --primary-dark: #0056b3;
+  --bg-light: #f2f2f7;
+  --bg-dark: #1c1c1e;
+  --card-light: rgba(255, 255, 255, 0.95);
+  --card-dark: rgba(30, 30, 30, 0.95);
+  --text-light: #1c1c1e;
+  --text-dark: #ffffff;
+  --shadow: 0 4px 20px rgba(0,0,0,0.1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; width: 100%; overflow: hidden; font-family: 'Inter', -apple-system, sans-serif; background: var(--bg-light); color: var(--text-light); transition: background 0.3s, color 0.3s; }
+
+body.night-mode { background: var(--bg-dark); color: var(--text-dark); }
+body.night-mode .leaflet-tile-pane { filter: brightness(0.6) invert(1) contrast(1.2) hue-rotate(190deg) saturate(0.8); }
+
+#map { position: fixed; inset: 0; z-index: 1; background: #e5e9ec; transition: transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+#map.nav-active { transform: perspective(800px) rotateX(15deg) scale(1.15) translateY(5%); }
+
+.glass-card { background: var(--card-light); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 20px; box-shadow: var(--shadow); border: 1px solid rgba(255,255,255,0.5); }
+body.night-mode .glass-card { background: var(--card-dark); border: 1px solid rgba(255,255,255,0.1); }
+
+.top-bar { position: fixed; top: 12px; left: 12px; right: 12px; z-index: 500; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.brand { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 18px; color: var(--primary); }
+.brand-left { display: flex; align-items: center; gap: 8px; }
+
+.search-container { position: relative; }
+.search-bar { display: flex; gap: 8px; }
+.search-bar input { flex: 1; background: rgba(120,120,128,0.12); border: none; color: var(--text-light); padding: 14px 16px; font-size: 16px; outline: none; border-radius: 14px; font-family: 'Inter', sans-serif; font-weight: 500; }
+body.night-mode .search-bar input { background: rgba(120,120,128,0.24); color: var(--text-dark); }
+.search-bar input::placeholder { color: #8e8e93; }
+
+.search-bar button { background: var(--primary); color: white; border: none; padding: 0 24px; font-weight: 600; cursor: pointer; font-size: 16px; border-radius: 14px; transition: 0.2s; }
+.search-bar button:active { background: var(--primary-dark); transform: scale(0.96); }
+
+/* AUTOCOMPLETE */
+.autocomplete-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 8px;
+  background: var(--card-light);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 600;
+  display: none;
+}
+body.night-mode .autocomplete-list { background: var(--card-dark); }
+.autocomplete-item {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(120,120,128,0.1);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: background 0.2s;
+}
+.autocomplete-item:last-child { border-bottom: none; }
+.autocomplete-item:active { background: rgba(0,122,255,0.1); }
+.autocomplete-item .icon { font-size: 20px; }
+.autocomplete-item .text { flex: 1; }
+.autocomplete-item .title { font-size: 15px; font-weight: 600; color: var(--text-light); }
+body.night-mode .autocomplete-item .title { color: var(--text-dark); }
+.autocomplete-item .subtitle { font-size: 12px; color: #8e8e93; margin-top: 2px; }
+
+/* FAVORITOS E HISTÓRICO */
+.quick-actions {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0;
+  scrollbar-width: none;
+}
+.quick-actions::-webkit-scrollbar { display: none; }
+.quick-btn {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  background: rgba(120,120,128,0.12);
+  border: none;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-light);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: 0.2s;
+}
+body.night-mode .quick-btn { background: rgba(120,120,128,0.24); color: var(--text-dark); }
+.quick-btn:active { transform: scale(0.95); background: rgba(0,122,255,0.2); }
+.quick-btn .emoji { font-size: 16px; }
+
+.map-fab { position: fixed; z-index: 400; width: 50px; height: 50px; background: var(--card-light); border: none; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--primary); cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 50%; transition: 0.2s; }
+body.night-mode .map-fab { background: var(--card-dark); color: var(--primary); }
+.map-fab:active { transform: scale(0.9); background: rgba(0,122,255,0.1); }
+
+#btnCenterGps { bottom: 100px; right: 16px; }
+#btnTheme { bottom: 160px; right: 16px; }
+
+#btnStartNav { position: fixed; bottom: 100px; right: 16px; z-index: 450; width: 60px; height: 60px; background: var(--primary); color: white; border: none; display: none; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 6px 20px rgba(0,122,255,0.4); cursor: pointer; transition: 0.2s; border-radius: 50%; }
+#btnStartNav:active { transform: scale(0.9); }
+
+#btnShare { position: fixed; bottom: 170px; right: 16px; z-index: 450; width: 50px; height: 50px; background: #25D366; color: white; border: none; display: none; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 15px rgba(37,211,102,0.4); cursor: pointer; transition: 0.2s; border-radius: 50%; }
+#btnShare:active { transform: scale(0.9); }
+
+#routeInfoPill { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); padding: 12px 24px; display: none; align-items: center; gap: 16px; z-index: 450; white-space: nowrap; font-weight: 600; }
+#routeInfoPill .dist { font-size: 18px; color: var(--primary); }
+#routeInfoPill .time { font-size: 18px; color: var(--text-light); }
+body.night-mode #routeInfoPill .time { color: var(--text-dark); }
+#routeInfoPill .divider { width: 1px; height: 20px; background: rgba(120,120,128,0.3); }
+
+#offRouteBanner { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 600; background: rgba(255, 149, 0, 0.95); backdrop-filter: blur(20px); padding: 20px 24px; border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); display: none; flex-direction: column; gap: 12px; min-width: 280px; animation: slideUp 0.3s ease; }
+#offRouteBanner.show { display: flex; }
+@keyframes slideUp { from { opacity: 0; transform: translate(-50%, -40%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+
+.off-route-title { font-size: 18px; font-weight: 700; color: white; text-align: center; }
+.off-route-buttons { display: flex; gap: 10px; }
+.off-route-btn { flex: 1; padding: 12px; border: none; border-radius: 12px; font-weight: 600; font-size: 14px; cursor: pointer; transition: 0.2s; }
+.off-route-btn.primary { background: white; color: #ff9500; }
+.off-route-btn.secondary { background: rgba(255,255,255,0.2); color: white; }
+.off-route-btn:active { transform: scale(0.95); }
+
+#hud { position: fixed; inset: 0; z-index: 2000; display: none; background: #000; overflow: hidden; }
+#hud video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+#hud-bg { position: absolute; inset: 0; width: 100%; height: 100%; background: url('https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?q=80&w=1920&auto=format&fit=crop') center/cover; z-index: 0; filter: brightness(0.5); }
+#hud.active-video video { display: block; }
+#hud.active-video #hud-bg { display: none; }
+
+#hudCanvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+
+#minimapContainer { position: absolute; top: 70px; right: 16px; width: 130px; height: 110px; z-index: 15; border-radius: 16px; overflow: hidden; border: 2px solid rgba(255,255,255,0.3); box-shadow: 0 4px 20px rgba(0,0,0,0.5); cursor: pointer; transition: transform 0.2s, border-color 0.2s; }
+#minimapContainer:active { transform: scale(0.95); border-color: var(--primary); }
+#minimapContainer::after { content: 'Toque para voltar'; position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: white; font-size: 9px; text-align: center; padding: 3px; font-weight: 600; pointer-events: none; }
+#minimap { width: 100%; height: 100%; }
+#minimap .leaflet-control-attribution { display: none !important; }
+#minimap .leaflet-tile-pane { filter: brightness(0.7) contrast(1.2); }
+
+.hud-ui { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
+.hud-ui > * { pointer-events: auto; }
+
+.hud-top { padding: 16px; display: flex; flex-direction: column; gap: 12px; background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent); }
+.hud-header { display: flex; justify-content: space-between; align-items: center; }
+.hud-title { font-size: 18px; font-weight: 700; color: white; display: flex; align-items: center; gap: 8px; }
+
+.hud-nav-card { background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(10px); padding: 16px; display: flex; gap: 16px; align-items: center; border-radius: 16px; width: fit-content; max-width: 85%; border: 1px solid rgba(255,255,255,0.1); }
+.hud-nav-card .arrow { font-size: 40px; color: white; line-height: 1; font-weight: 700; }
+.hud-nav-card .info h1 { font-size: 28px; font-weight: 700; color: white; line-height: 1; margin-bottom: 4px; }
+.hud-nav-card .info h2 { font-size: 16px; font-weight: 500; color: #007aff; text-transform: uppercase; letter-spacing: 0.5px; }
+.hud-nav-card .info p { font-size: 13px; color: rgba(255,255,255,0.7); margin-top: 4px; }
+
+.hud-speed { position: absolute; bottom: 120px; left: 20px; width: 80px; height: 80px; border: 3px solid white; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); }
+.hud-speed b { font-size: 28px; font-weight: 700; color: white; line-height: 1; }
+.hud-speed span { font-size: 11px; color: rgba(255,255,255,0.8); font-weight: 600; margin-top: 2px; }
+
+.hud-right-column { position: absolute; top: 200px; right: 16px; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.hud-btn { width: 48px; height: 48px; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; cursor: pointer; transition: 0.2s; }
+.hud-btn:active { transform: scale(0.9); background: rgba(255,255,255,0.2); }
+.hud-btn.active { background: var(--primary); border-color: var(--primary); }
+
+.hud-bottom-card { margin: 0 16px 24px 16px; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(10px); padding: 16px; display: flex; align-items: center; gap: 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); }
+.hud-bottom-card .icon-route { width: 48px; height: 48px; background: var(--primary); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px; }
+.hud-bottom-card .info { flex: 1; }
+.hud-bottom-card .info h3 { font-size: 16px; color: white; margin-bottom: 4px; font-weight: 600; }
+.hud-bottom-card .info p { font-size: 13px; color: rgba(255,255,255,0.7); }
+.hud-bottom-card .time { text-align: right; border-left: 1px solid rgba(255,255,255,0.2); padding-left: 16px; }
+.hud-bottom-card .time b { display: block; font-size: 20px; color: white; font-weight: 700; }
+.hud-bottom-card .time span { font-size: 12px; color: rgba(255,255,255,0.7); }
+
+.hud-close { background: rgba(255, 59, 48, 0.9); border: none; width: 44px; height: 44px; color: white; display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; border-radius: 50%; transition: 0.2s; }
+.hud-close:active { transform: scale(0.9); }
+
+#toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 12px 24px; border-radius: 25px; font-size: 15px; font-weight: 500; z-index: 3000; display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.3); text-align: center; }
+
+/* MODAL DE FAVORITOS */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 700;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal-content {
+  background: var(--card-light);
+  border-radius: 20px 20px 0 0;
+  padding: 20px;
+  width: 100%;
+  max-height: 70vh;
+  overflow-y: auto;
+  animation: slideUpModal 0.3s ease;
+}
+body.night-mode .modal-content { background: var(--card-dark); }
+@keyframes slideUpModal { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-title { font-size: 20px; font-weight: 700; color: var(--text-light); }
+body.night-mode .modal-title { color: var(--text-dark); }
+.modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-light); }
+body.night-mode .modal-close { color: var(--text-dark); }
+.favorite-item { display: flex; align-items: center; gap: 12px; padding: 14px; background: rgba(120,120,128,0.1); border-radius: 12px; margin-bottom: 8px; cursor: pointer; }
+.favorite-item:active { background: rgba(0,122,255,0.2); }
+.favorite-item .fav-icon { font-size: 24px; }
+.favorite-item .fav-info { flex: 1; }
+.favorite-item .fav-name { font-weight: 600; font-size: 15px; }
+.favorite-item .fav-address { font-size: 12px; color: #8e8e93; margin-top: 2px; }
+.favorite-item .fav-delete { background: none; border: none; font-size: 18px; cursor: pointer; color: #ff3b30; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="top-bar">
+  <div class="brand glass-card" style="padding: 12px 16px; border-radius: 16px;">
+    <div class="brand-left"><span>🛡️</span> RotaSegura</div>
+    <div style="font-size:12px; font-weight:600; color: #34c759;">● ONLINE</div>
+  </div>
+  
+  <div class="search-container">
+    <div class="search-bar">
+      <input id="destInput" type="text" placeholder="Para onde?" oninput="onSearchInput()" onkeydown="if(event.key==='Enter')calcRoute()">
+      <button onclick="calcRoute()">Ir</button>
+    </div>
+    <div class="autocomplete-list" id="autocompleteList"></div>
+  </div>
+
+  <div class="quick-actions">
+    <button class="quick-btn" onclick="openFavorites()"><span class="emoji">⭐</span> Favoritos</button>
+    <button class="quick-btn" onclick="openHistory()"><span class="emoji">🕐</span> Histórico</button>
+    <button class="quick-btn" onclick="saveCurrentAsFavorite()"><span class="emoji">➕</span> Salvar local</button>
+  </div>
+</div>
+
+<div id="routeInfoPill" class="glass-card">
+  <div class="dist" id="distChip">-- km</div>
+  <div class="divider"></div>
+  <div class="time" id="timeChip">-- min</div>
+</div>
+
+<button id="btnShare" onclick="shareRoute()">📤</button>
+
+<div id="offRouteBanner">
+  <div class="off-route-title">⚠️ Você saiu da rota</div>
+  <div class="off-route-buttons">
+    <button class="off-route-btn secondary" onclick="dismissOffRoute()">Continuar</button>
+    <button class="off-route-btn primary" onclick="recalculateRoute()">Recalcular</button>
+  </div>
+</div>
+
+<button class="map-fab" id="btnCenterGps" onclick="centerOnUser()">🎯</button>
+<button class="map-fab" id="btnTheme" onclick="toggleTheme()">🌙</button>
+<button class="map-fab" id="btnStartNav" onclick="startHUD()">▶</button>
+
+<div id="hud">
+  <div id="hud-bg"></div>
+  <video id="hudVideo" autoplay playsinline muted></video>
+  <canvas id="hudCanvas"></canvas>
+  <div id="minimapContainer" onclick="stopHUD()"><div id="minimap"></div></div>
+  <div class="hud-ui">
+    <div class="hud-top">
+      <div class="hud-header">
+        <div class="hud-title"><span>🛡️</span> RotaSegura</div>
+        <button class="hud-close" onclick="stopHUD()">✕</button>
+      </div>
+      <div class="hud-nav-card">
+        <div class="arrow" id="hudArrowIcon">↑</div>
+        <div class="info">
+          <h1 id="hudDistance">-- km</h1>
+          <h2 id="hudInstruction">Siga em frente</h2>
+          <p id="hudStreetName">Aguardando...</p>
+        </div>
+      </div>
+    </div>
+    <div class="hud-speed"><b id="hudSpeedVal">0</b><span>KM/H</span></div>
+    <div class="hud-right-column">
+      <button class="hud-btn active" id="btnSound" onclick="toggleVoice()">🔊</button>
+      <button class="hud-btn" onclick="stopHUD()">🗺️</button>
+    </div>
+    <div>
+      <div class="hud-bottom-card">
+        <div class="icon-route">🛡️</div>
+        <div class="info"><h3>Rota Segura</h3><p id="hudStatusText">Nenhum incidente detectado.</p></div>
+        <div class="time"><b id="hudTime">-- min</b><span>CHEGADA: <span id="hudArrival">--:--</span></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de Favoritos/Histórico -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Favoritos</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modalList"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let map, userPos = null, userMarker = null;
+let currentRoute = null, hudStream = null, destPos = null, destName = '';
+let currentTurn = 'straight';
+let watchId = null;
+let routeSteps = []; 
+let isNight = false;
+let miniMap = null;
+let miniRouteLayer = null;
+let miniUserMarker = null;
+let routeCoords = [];
+
+let isOffRoute = false;
+let offRouteStartTime = 0;
+let lastDistanceToDest = 0;
+let isMovingAway = false;
+
+// ⚠️ COLOQUE SUA CHAVE MAPBOX AQUI
+const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1IjoidXN1YXJpbyIsImEiOiJjb...';
+
+const hudCanvas = $('hudCanvas');
+const hCtx = hudCanvas.getContext('2d');
+let hudAnimTime = 0;
+let currentCurveOffset = 0; 
+let targetCurveOffset = 0;
+
+let searchTimeout = null;
+let currentSearchResults = [];
+
+// ==========================================
+// FAVORITOS E HISTÓRICO (localStorage)
+// ==========================================
+function getFavorites() {
+  try { return JSON.parse(localStorage.getItem('rs_favorites') || '[]'); } catch { return []; }
+}
+function saveFavorites(favs) { localStorage.setItem('rs_favorites', JSON.stringify(favs)); }
+
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem('rs_history') || '[]'); } catch { return []; }
+}
+function saveHistory(hist) { localStorage.setItem('rs_history', JSON.stringify(hist)); }
+
+function addToHistory(name, lat, lon) {
+  const hist = getHistory();
+  const entry = { name, lat, lon, time: Date.now() };
+  // Remove duplicata se existir
+  const filtered = hist.filter(h => !(Math.abs(h.lat - lat) < 0.001 && Math.abs(h.lon - lon) < 0.001));
+  filtered.unshift(entry);
+  saveHistory(filtered.slice(0, 20)); // Mantém só 20
+}
+
+function saveCurrentAsFavorite() {
+  if (!destPos) return toast('Calcule uma rota primeiro');
+  const name = prompt('Nome do local (ex: Casa, Trabalho):');
+  if (!name) return;
+  const favs = getFavorites();
+  favs.push({ name, lat: destPos[0], lon: destPos[1], address: destName });
+  saveFavorites(favs);
+  toast(`⭐ "${name}" salvo!`);
+}
+
+function openFavorites() {
+  const favs = getFavorites();
+  $('modalTitle').textContent = '⭐ Favoritos';
+  if (favs.length === 0) {
+    $('modalList').innerHTML = '<p style="text-align:center;color:#8e8e93;padding:20px;">Nenhum favorito salvo ainda</p>';
+  } else {
+    $('modalList').innerHTML = favs.map((f, i) => `
+      <div class="favorite-item" onclick="goToFavorite(${f.lat}, ${f.lon}, '${f.name.replace(/'/g, "\\'")}')">
+        <div class="fav-icon">📍</div>
+        <div class="fav-info">
+          <div class="fav-name">${f.name}</div>
+          <div class="fav-address">${f.address || 'Local salvo'}</div>
+        </div>
+        <button class="fav-delete" onclick="event.stopPropagation();deleteFavorite(${i})">🗑️</button>
+      </div>
+    `).join('');
+  }
+  $('modalOverlay').classList.add('show');
+}
+
+function openHistory() {
+  const hist = getHistory();
+  $('modalTitle').textContent = '🕐 Histórico';
+  if (hist.length === 0) {
+    $('modalList').innerHTML = '<p style="text-align:center;color:#8e8e93;padding:20px;">Nenhuma busca recente</p>';
+  } else {
+    $('modalList').innerHTML = hist.map(h => `
+      <div class="favorite-item" onclick="goToFavorite(${h.lat}, ${h.lon}, '${h.name.replace(/'/g, "\\'")}')">
+        <div class="fav-icon">🕐</div>
+        <div class="fav-info">
+          <div class="fav-name">${h.name}</div>
+          <div class="fav-address">${new Date(h.time).toLocaleString('pt-BR')}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+  $('modalOverlay').classList.add('show');
+}
+
+function goToFavorite(lat, lon, name) {
+  closeModal();
+  $('destInput').value = name;
+  destPos = [lat, lon];
+  destName = name;
+  calcRouteFromPos();
+}
+
+function deleteFavorite(index) {
+  const favs = getFavorites();
+  favs.splice(index, 1);
+  saveFavorites(favs);
+  openFavorites();
+  toast('Favorito removido');
+}
+
+function closeModal() { $('modalOverlay').classList.remove('show'); }
+
+// ==========================================
+// AUTOCOMPLETE
+// ==========================================
+function onSearchInput() {
+  const q = $('destInput').value.trim();
+  clearTimeout(searchTimeout);
+  if (q.length < 3) {
+    $('autocompleteList').style.display = 'none';
+    return;
+  }
+  searchTimeout = setTimeout(() => searchAutocomplete(q), 400);
+}
+
+async function searchAutocomplete(query) {
+  try {
+    let results = [];
+    if (MAPBOX_ACCESS_TOKEN && !MAPBOX_ACCESS_TOKEN.includes('SUA_') && MAPBOX_ACCESS_TOKEN.length > 20) {
+      let proximityParam = userPos ? `&proximity=${userPos[1]},${userPos[0]}` : '';
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_ACCESS_TOKEN}${proximityParam}&country=br&language=pt&limit=5&types=poi,address,place`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.features) {
+        results = data.features.map(f => ({
+          title: f.text || f.place_name,
+          subtitle: f.place_name,
+          lat: f.center[1],
+          lon: f.center[0]
+        }));
+      }
+    }
+    if (results.length === 0) {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=br&accept-language=pt-BR`;
+      const res = await fetch(url);
+      const data = await res.json();
+      results = data.map(f => ({
+        title: f.display_name.split(',')[0],
+        subtitle: f.display_name,
+        lat: parseFloat(f.lat),
+        lon: parseFloat(f.lon)
+      }));
+    }
+    currentSearchResults = results;
+    if (results.length > 0) {
+      $('autocompleteList').innerHTML = results.map((r, i) => `
+        <div class="autocomplete-item" onclick="selectAutocomplete(${i})">
+          <div class="icon">📍</div>
+          <div class="text">
+            <div class="title">${r.title}</div>
+            <div class="subtitle">${r.subtitle.substring(0, 60)}...</div>
+          </div>
+        </div>
+      `).join('');
+      $('autocompleteList').style.display = 'block';
+    } else {
+      $('autocompleteList').style.display = 'none';
+    }
+  } catch (e) {
+    console.error('Erro autocomplete:', e);
+  }
+}
+
+function selectAutocomplete(index) {
+  const r = currentSearchResults[index];
+  if (!r) return;
+  $('destInput').value = r.title;
+  $('autocompleteList').style.display = 'none';
+  destPos = [r.lat, r.lon];
+  destName = r.title;
+  calcRouteFromPos();
+}
+
+// ==========================================
+// TEMA AUTOMÁTICO
+// ==========================================
+function updateTheme() {
+  const now = new Date();
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  const currentTime = hours * 60 + minutes;
+  const shouldBeNight = currentTime >= 1051 || currentTime < 300;
+  if (shouldBeNight !== isNight) {
+    isNight = shouldBeNight;
+    document.body.classList.toggle('night-mode', isNight);
+    $('btnTheme').textContent = isNight ? '☀️' : '🌙';
+  }
+}
+updateTheme();
+setInterval(updateTheme, 60000);
+
+// ==========================================
+// VOZ
+// ==========================================
+let synth = window.speechSynthesis;
+let voiceEnabled = true;
+let ptVoice = null;
+
+function loadVoices() {
+  const voices = synth.getVoices();
+  ptVoice = voices.find(v => v.lang === 'pt-BR') || voices.find(v => v.lang.startsWith('pt')) || null;
+}
+if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = loadVoices;
+loadVoices();
+
+function speak(text) {
+  if (!voiceEnabled || !synth) return;
+  synth.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'pt-BR';
+  utterance.rate = 1.0;
+  if (ptVoice) utterance.voice = ptVoice;
+  synth.speak(utterance);
+}
+
+function toggleVoice() {
+  voiceEnabled = !voiceEnabled;
+  const btn = $('btnSound');
+  if (voiceEnabled) {
+    btn.classList.add('active');
+    btn.textContent = '🔊';
+    toast('Voz ativada');
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = '🔇';
+    synth.cancel();
+    toast('Voz desativada');
+  }
+}
+
+// ==========================================
+// MAPA
+// ==========================================
+map = L.map('map', { zoomControl: false, attributionControl: false }).setView([-22.9068, -43.1729], 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+const userArrowIcon = L.divIcon({
+  className: '',
+  html: `<div style="width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="#007aff" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+            <path d="M12 2L22 20L12 17L2 20L12 2Z" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+          </svg>
+         </div>`,
+  iconSize: [36, 36], iconAnchor: [18, 18]
+});
+
+const destIcon = L.divIcon({
+  className: '',
+  html: `<div style="width: 32px; height: 32px; background: #ff3b30; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.3);"></div>`,
+  iconSize: [32, 32], iconAnchor: [16, 32]
+});
+
+function centerOnUser() { if (userPos) map.setView(userPos, 16); }
+
+// ==========================================
+// BUSCA
+// ==========================================
+async function searchLocation(query) {
+  let results = [];
+  if (MAPBOX_ACCESS_TOKEN && !MAPBOX_ACCESS_TOKEN.includes('SUA_') && MAPBOX_ACCESS_TOKEN.length > 20) {
+    try {
+      let proximityParam = userPos ? `&proximity=${userPos[1]},${userPos[0]}` : '';
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_ACCESS_TOKEN}${proximityParam}&country=br&language=pt&limit=10&types=poi,address,place`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.features) {
+        results = data.features.map(f => ({
+          lat: f.center[1], lon: f.center[0],
+          display_name: f.place_name || f.text,
+          relevance: f.relevance || 0
+        }));
+        if (userPos) {
+          results.forEach(r => { r.distance = distanceToDestination(r.lat, r.lon, userPos[0], userPos[1]); });
+          results.sort((a, b) => a.distance - b.distance);
+        }
+      }
+    } catch (e) { console.error('Erro Mapbox:', e); }
+  }
+  if (results.length === 0) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=br&accept-language=pt-BR`;
+      const res = await fetch(url);
+      const data = await res.json();
+      results = data.map(f => ({ lat: parseFloat(f.lat), lon: parseFloat(f.lon), display_name: f.display_name, relevance: 0.5 }));
+    } catch (e) { console.error('Erro Nominatim:', e); }
+  }
+  return results;
+}
+
+// ==========================================
+// DISTÂNCIA
+// ==========================================
+function distanceToRoute(userLat, userLon, routeCoordinates) {
+  let minDistance = Infinity;
+  for (let i = 0; i < routeCoordinates.length - 1; i++) {
+    const p1 = routeCoordinates[i], p2 = routeCoordinates[i + 1];
+    const A = userLat - p1[1], B = userLon - p1[0];
+    const C = p2[1] - p1[1], D = p2[0] - p1[0];
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = lenSq !== 0 ? dot / lenSq : -1;
+    let xx, yy;
+    if (param < 0) { xx = p1[1]; yy = p1[0]; }
+    else if (param > 1) { xx = p2[1]; yy = p2[0]; }
+    else { xx = p1[1] + param * C; yy = p1[0] + param * D; }
+    const distance = Math.sqrt((userLat - xx) ** 2 + (userLon - yy) ** 2) * 111320;
+    if (distance < minDistance) minDistance = distance;
+  }
+  return minDistance;
+}
+
+function distanceToDestination(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180, Δλ = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ==========================================
+// DESVIO
+// ==========================================
+function showOffRouteBanner() {
+  if (!isOffRoute) {
+    isOffRoute = true;
+    $('offRouteBanner').classList.add('show');
+    speak("Você saiu da rota. Deseja recalcular?");
+  }
+}
+function dismissOffRoute() {
+  $('offRouteBanner').classList.remove('show');
+  isOffRoute = false;
+  offRouteStartTime = 0;
+}
+
+async function recalculateRoute() {
+  if (!userPos || !destPos) return;
+  $('offRouteBanner').classList.remove('show');
+  isOffRoute = false;
+  offRouteStartTime = 0;
+  toast('Recalculando rota...');
+  speak("Recalculando rota");
+  try {
+    const rt = await fetch(`https://router.project-osrm.org/route/v1/driving/${userPos[1]},${userPos[0]};${destPos[1]},${destPos[0]}?overview=full&geometries=geojson&steps=true`);
+    const rdata = await rt.json();
+    if (rdata.code !== 'Ok') return toast('Erro ao recalcular');
+    currentRoute = rdata.routes[0];
+    routeSteps = currentRoute.legs[0].steps;
+    routeCoords = currentRoute.geometry.coordinates.map(c => [c[1], c[0]]);
+    map.eachLayer(l => { if (l instanceof L.Polyline) map.removeLayer(l); });
+    L.polyline(routeCoords, { color: '#ffffff', weight: 10, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    L.polyline(routeCoords, { color: '#007aff', weight: 6, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    if (miniRouteLayer) { miniRouteLayer.clearLayers(); L.polyline(routeCoords, { color: '#007aff', weight: 4, opacity: 0.9 }).addTo(miniRouteLayer); }
+    const dist = (currentRoute.distance / 1000).toFixed(1).replace('.', ',');
+    const dur = Math.round(currentRoute.duration / 60);
+    const arr = new Date(Date.now() + currentRoute.duration * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    $('distChip').textContent = dist + ' km';
+    $('timeChip').textContent = dur + ' min';
+    $('hudDistance').textContent = dist + ' km';
+    $('hudTime').textContent = dur + ' min';
+    $('hudArrival').textContent = arr;
+    toast('Nova rota calculada!');
+    speak(`Rota recalculada. ${dist} quilômetros, ${dur} minutos.`);
+  } catch (e) { console.error('Erro:', e); toast('Erro de conexão'); }
+}
+
+// ==========================================
+// GPS
+// ==========================================
+function startTracking() {
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  watchId = navigator.geolocation.watchPosition(pos => {
+    userPos = [pos.coords.latitude, pos.coords.longitude];
+    if (userMarker) map.removeLayer(userMarker);
+    userMarker = L.marker(userPos, { icon: userArrowIcon }).addTo(map);
+    if (miniMap && userPos) {
+      miniMap.setView(userPos, 16);
+      if (miniUserMarker) miniMap.removeLayer(miniUserMarker);
+      miniUserMarker = L.circleMarker(userPos, { radius: 6, color: '#007aff', fillColor: '#007aff', fillOpacity: 1, weight: 2 }).addTo(miniMap);
+    }
+    if (currentRoute && routeCoords.length > 0 && destPos) {
+      const distToRoute = distanceToRoute(userPos[0], userPos[1], routeCoords);
+      const distToDest = distanceToDestination(userPos[0], userPos[1], destPos[0], destPos[1]);
+      if (lastDistanceToDest > 0) isMovingAway = distToDest > lastDistanceToDest + 50;
+      lastDistanceToDest = distToDest;
+      if (distToRoute > 500 && isMovingAway) {
+        if (!isOffRoute) offRouteStartTime = Date.now();
+        if (Date.now() - offRouteStartTime > 30000 && !isOffRoute) showOffRouteBanner();
+      } else {
+        if (isOffRoute && distToRoute < 500) dismissOffRoute();
+        offRouteStartTime = 0;
+      }
+    }
+    if ($('hud').style.display === 'block') {
+      let speedMps = pos.coords.speed || 0; 
+      $('hudSpeedVal').textContent = Math.round(speedMps * 3.6);
+      if (currentRoute) updateNavigation();
+    }
+  }, err => console.log(err), { enableHighAccuracy: true, maximumAge: 0 });
+}
+startTracking();
+
+// ==========================================
+// CALCULAR ROTA
+// ==========================================
+async function calcRoute() {
+  const q = $('destInput').value.trim();
+  if (!q) return toast('Insira um destino');
+  if (!userPos) return toast('Aguardando GPS...');
+  $('autocompleteList').style.display = 'none';
+  toast('Buscando destino...');
+  speak("Buscando destino");
+  try {
+    const results = await searchLocation(q);
+    if (!results || !results.length) {
+      toast('Local não encontrado');
+      speak("Local não encontrado.");
+      return;
+    }
+    let bestResult = (userPos && results[0].distance !== undefined) ? results[0] : results.sort((a, b) => (b.relevance || 0) - (a.relevance || 0))[0];
+    destPos = [bestResult.lat, bestResult.lon];
+    destName = bestResult.display_name;
+    addToHistory(bestResult.display_name.split(',')[0], destPos[0], destPos[1]);
+    await drawRoute();
+  } catch (e) { toast('Erro de conexão'); console.error(e); }
+}
+
+async function calcRouteFromPos() {
+  if (!userPos || !destPos) return;
+  toast('Calculando rota...');
+  speak("Calculando rota");
+  await drawRoute();
+}
+
+async function drawRoute() {
+  try {
+    const rt = await fetch(`https://router.project-osrm.org/route/v1/driving/${userPos[1]},${userPos[0]};${destPos[1]},${destPos[0]}?overview=full&geometries=geojson&steps=true`);
+    const rdata = await rt.json();
+    if (rdata.code !== 'Ok') return toast('Rota não encontrada');
+    currentRoute = rdata.routes[0];
+    routeSteps = currentRoute.legs[0].steps;
+    routeCoords = currentRoute.geometry.coordinates.map(c => [c[1], c[0]]);
+    isOffRoute = false; offRouteStartTime = 0; lastDistanceToDest = 0; isMovingAway = false;
+    map.eachLayer(l => { if (l instanceof L.Polyline) map.removeLayer(l); });
+    L.polyline(routeCoords, { color: '#ffffff', weight: 10, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    L.polyline(routeCoords, { color: '#007aff', weight: 6, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    const destMarker = L.marker(destPos, { icon: destIcon }).addTo(map);
+    map.fitBounds(L.latLngBounds(routeCoords), { padding: [80, 80] });
+    const dist = (currentRoute.distance / 1000).toFixed(1).replace('.', ',');
+    const dur = Math.round(currentRoute.duration / 60);
+    const arr = new Date(Date.now() + currentRoute.duration * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    $('routeInfoPill').style.display = 'flex';
+    $('btnStartNav').style.display = 'flex';
+    $('btnShare').style.display = 'flex';
+    $('distChip').textContent = dist + ' km';
+    $('timeChip').textContent = dur + ' min';
+    $('hudDistance').textContent = dist + ' km';
+    $('hudTime').textContent = dur + ' min';
+    $('hudArrival').textContent = arr;
+    const locationName = destName ? destName.split(',')[0] : 'destino';
+    toast(`Rota: ${locationName}`);
+    speak(`Rota para ${locationName}. ${dist} quilômetros, ${dur} minutos. Chegada às ${arr}`);
+  } catch (e) { toast('Erro de conexão'); console.error(e); }
+}
+
+// ==========================================
+// COMPARTILHAR WHATSAPP
+// ==========================================
+function shareRoute() {
+  if (!destPos || !currentRoute) return toast('Calcule uma rota primeiro');
+  const dist = $('distChip').textContent;
+  const dur = $('timeChip').textContent;
+  const arr = $('hudArrival').textContent;
+  const locationName = destName ? destName.split(',')[0] : 'meu destino';
+  const mapsLink = `https://www.google.com/maps/dir/?api=1&destination=${destPos[0]},${destPos[1]}`;
+  const msg = `🗺️ *RotaSegura*\n\n📍 Destino: ${locationName}\n📏 Distância: ${dist}\n⏱️ Tempo: ${dur}\n🏁 Chegada: ${arr}\n\n🔗 Ver no mapa: ${mapsLink}`;
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(whatsappUrl, '_blank');
+}
+
+// ==========================================
+// NAVEGAÇÃO
+// ==========================================
+function updateNavigation() {
+  if (!currentRoute || !userPos) return;
+  let minDist = Infinity, closestIdx = 0;
+  for (let i = 0; i < routeCoords.length; i++) {
+    const d = Math.sqrt((routeCoords[i][0] - userPos[0])**2 + (routeCoords[i][1] - userPos[1])**2);
+    if (d < minDist) { minDist = d; closestIdx = i; }
+  }
+  const lookAheadIdx = Math.min(closestIdx + 25, routeCoords.length - 1);
+  if (closestIdx === lookAheadIdx) return;
+  const p1 = routeCoords[closestIdx];
+  const p2 = routeCoords[Math.min(closestIdx + 5, routeCoords.length - 1)];
+  const p3 = routeCoords[lookAheadIdx];
+  const v1 = [p2[0] - p1[0], p2[1] - p1[1]];
+  const v2 = [p3[0] - p2[0], p3[1] - p2[1]];
+  const cross = v1[0] * v2[1] - v1[1] * v2[0];
+  const angle = Math.atan2(cross, v1[0] * v2[0] + v1[1] * v2[1]) * 180 / Math.PI;
+  if (angle > 15) { targetCurveOffset = 150; currentTurn = 'right'; } 
+  else if (angle < -15) { targetCurveOffset = -150; currentTurn = 'left'; } 
+  else { targetCurveOffset = 0; currentTurn = 'straight'; }
+  if (currentTurn === 'right') { $('hudArrowIcon').textContent = '↪'; $('hudInstruction').textContent = 'Curva à direita'; } 
+  else if (currentTurn === 'left') { $('hudArrowIcon').textContent = '↩'; $('hudInstruction').textContent = 'Curva à esquerda'; } 
+  else { $('hudArrowIcon').textContent = '↑'; $('hudInstruction').textContent = 'Siga em frente'; }
+  if (routeSteps.length > 0) {
+    let stepName = "Via principal";
+    for (let step of routeSteps) { if (step.name && step.name.trim() !== "") { stepName = step.name; break; } }
+    $('hudStreetName').textContent = stepName;
+  }
+}
+
+// ==========================================
+// CANVAS HUD
+// ==========================================
+function resizeHudCanvas() {
+  if (!hudCanvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  hudCanvas.width = window.innerWidth * dpr;
+  hudCanvas.height = window.innerHeight * dpr;
+  hCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resizeHudCanvas);
+
+function drawHudAnimation() {
+  if (!$('hud').classList.contains('active')) { requestAnimationFrame(drawHudAnimation); return; }
+  const W = window.innerWidth, H = window.innerHeight;
+  hCtx.clearRect(0, 0, W, H);
+  const cx = W / 2, cy = H;
+  currentCurveOffset += (targetCurveOffset - currentCurveOffset) * 0.05;
+  hCtx.beginPath();
+  hCtx.moveTo(cx - 160, cy + 50);
+  hCtx.quadraticCurveTo(cx - 80 + currentCurveOffset * 0.5, cy * 0.5, cx - 40 + currentCurveOffset, 0);
+  hCtx.lineTo(cx + 40 + currentCurveOffset, 0);
+  hCtx.quadraticCurveTo(cx + 80 + currentCurveOffset * 0.5, cy * 0.5, cx + 160, cy + 50);
+  hCtx.closePath();
+  let grad = hCtx.createLinearGradient(0, cy, 0, 0);
+  grad.addColorStop(0, 'rgba(0, 122, 255, 0.3)');
+  grad.addColorStop(1, 'rgba(0, 122, 255, 0.0)');
+  hCtx.fillStyle = grad;
+  hCtx.fill();
+  hudAnimTime += 0.008;
+  for (let i = 0; i < 4; i++) {
+    let t = (hudAnimTime + i * 0.25) % 1;
+    let p0 = {x: cx, y: cy + 50}, p1 = {x: cx + currentCurveOffset * 0.5, y: cy * 0.5}, p2 = {x: cx + currentCurveOffset, y: 0};
+    let x = Math.pow(1-t, 2)*p0.x + 2*(1-t)*t*p1.x + Math.pow(t, 2)*p2.x;
+    let y = Math.pow(1-t, 2)*p0.y + 2*(1-t)*t*p1.y + Math.pow(t, 2)*p2.y;
+    let dx = 2*(1-t)*(p1.x - p0.x) + 2*t*(p2.x - p1.x);
+    let dy = 2*(1-t)*(p1.y - p0.y) + 2*t*(p2.y - p1.y);
+    let angle = Math.atan2(dy, dx) + Math.PI/2;
+    let scale = 0.6 + t * 0.6;
+    let opacity = t < 0.2 ? t / 0.2 : (1 - t) / 0.8;
+    hCtx.globalAlpha = opacity;
+    hCtx.save(); hCtx.translate(x, y); hCtx.rotate(angle); hCtx.scale(scale, scale);
+    hCtx.beginPath();
+    hCtx.moveTo(0, -25); hCtx.lineTo(15, 10); hCtx.lineTo(6, 10); hCtx.lineTo(6, 25);
+    hCtx.lineTo(-6, 25); hCtx.lineTo(-6, 10); hCtx.lineTo(-15, 10); hCtx.closePath();
+    hCtx.fillStyle = '#ffffff';
+    hCtx.shadowColor = 'rgba(0,0,0,0.5)'; hCtx.shadowBlur = 10;
+    hCtx.fill();
+    hCtx.restore();
+  }
+  requestAnimationFrame(drawHudAnimation);
+}
+
+// ==========================================
+// PARA-BRISA
+// ==========================================
+function startHUD() {
+  $('hud').style.display = 'block';
+  $('hud').classList.add('active');
+  $('map').classList.add('nav-active');
+  resizeHudCanvas();
+  requestAnimationFrame(drawHudAnimation);
+  speak("Navegação iniciada.");
+  if (!miniMap) {
+    miniMap = L.map('minimap', { zoomControl: false, attributionControl: false, dragging: false, touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false }).setView(userPos || [-22.9068, -43.1729], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(miniMap);
+    miniRouteLayer = L.layerGroup().addTo(miniMap);
+    if (currentRoute) L.polyline(routeCoords, { color: '#007aff', weight: 4, opacity: 0.9 }).addTo(miniRouteLayer);
+  }
+  setTimeout(() => { miniMap.invalidateSize(); }, 100);
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .then(stream => { hudStream = stream; $('hudVideo').srcObject = stream; $('hud').classList.add('active-video'); })
+      .catch(err => { console.log("Câmera negada."); $('hud').classList.remove('active-video'); });
+  }
+}
+
+function stopHUD() {
+  $('hud').style.display = 'none';
+  $('hud').classList.remove('active', 'active-video');
+  $('map').classList.remove('nav-active');
+  if (synth) synth.cancel();
+  if (hudStream) { hudStream.getTracks().forEach(t => t.stop()); hudStream = null; $('hudVideo').srcObject = null; }
+}
+
+function toggleTheme() {
+  isNight = !isNight;
+  document.body.classList.toggle('night-mode', isNight);
+  $('btnTheme').textContent = isNight ? '☀️' : '🌙';
+}
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(window.toastT);
+  window.toastT = setTimeout(() => t.style.display = 'none', 3000);
+}
+
+// Fechar autocomplete ao clicar fora
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-container')) {
+    $('autocompleteList').style.display = 'none';
+  }
+});
+</script>
+</body>
+</html>
